@@ -1,0 +1,228 @@
+<html>
+
+    <head>
+        <title>Trabalho 2 -- Alternative BDSF</title>
+
+        <!-- libraries -->
+        <!--link rel="stylesheet" href="/common/lib/normalize.css"-->
+        <script type="text/javascript" src="/common/lib/gl-matrix.js"></script>
+        <script type="text/javascript" src="/common/lib/dat.gui.js"></script>
+        
+        <!-- modules -->
+        <script type="text/javascript" src="/common/js/utils.js"></script>
+        <script type="text/javascript" src="/common/js/Program.js"></script>
+
+
+        <script type="text/javascript">
+            'use strict';
+
+            //Global variables
+            let
+                gl,
+                program,
+                angle = 0,
+                robot = [],
+                before = 0,
+                shininess = 24,
+                distance = -1750,
+                height_distance = -125,
+                normalMatrix = mat4.create(),
+                clearColor = [0.2, 0.2, 0.35],
+                lightPosition = [100, 400, 100],
+                modelViewMatrix = mat4.create(),
+                projectionMatrix = mat4.create(),
+                vertexShaderSource, fragShaderSource;
+            
+            // Global variables to use throughout application
+            function initProgram(){
+                const canvas = document.getElementById('webgl-canvas');
+
+                gl = canvas.getContext('webgl2') || console.error('WebGL2 is not available in your browser.');
+                gl.clearColor(...clearColor, 1);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LEQUAL);
+
+                program = gl.createProgram();
+                
+                fetch("robot_vertex.glsl").then( resp => resp.text()).then(
+                    vertexShaderSource =>{ 
+                        //
+                        console.log(vertexShaderSource);
+                    }
+                )
+
+                fetch("robot_frag.glsl").then( resp => resp.text()).then(
+                    fragShaderSource =>{ 
+                        console.log(fragShaderSource);
+                    }
+                )
+
+                var vertexShader = gl.createShader(gl.VERTEX_SHADER), fragShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(vertexShader, vertexShaderSource); gl.shaderSource(fragShader, fragShaderSource);
+                gl.compileShader(vertexShader); gl.compileShader(fragShader);
+
+                if(!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)){
+                    console.error(gl.getShaderInfoLog(vertexShader));
+                    return null;
+                }
+
+                if(!gl.getShaderParameter(fragShader, gl.COMPILE_STATUS)){
+                    console.error(gl.getShaderInfoLog(fragShader));
+                    return null;
+                }
+                
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragShader);
+                gl.linkProgram(program);
+
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    return console.error('Could not initialize shaders.');
+                }
+
+                gl.useProgram(program);
+
+                // Attributes to be loaded into program
+                const attributes = [
+                    'aVertexPosition',
+                    'aVertexNormal'
+                ];
+
+                // Uniforms to be loaded into program
+                const uniforms = [
+                    'uProjectionMatrix',
+                    'uModelViewMatrix',
+                    'uNormalMatrix',
+                    'uLightAmbient',
+                    'uLightPosition',
+                    'uMaterialSpecular',
+                    'uMaterialDiffuse',
+                    'uShininess'
+                ];
+
+                program.load(attributes, uniforms);
+            }
+
+            function initLights(){
+                gl.uniform3fv(program.uLightPosition, lightPosition);
+                gl.uniform3f(program.uLightAmbient, 0.1, 0.1, 0.1);
+                gl.uniform3f(program.uMaterialSpecular, 0.5, 0.5, 0.5);
+                gl.uniform3f(program.uMaterialDiffuse, 0.8, 0.8, 0.8);
+                gl.uniform1f(program.uShininess, shininess);
+            }
+
+            function initControls(){
+
+            }
+
+            function animate(){
+                const now = new Date().getTime();
+                if(before){
+                    const elapsed = now - before;
+                    angle += (90 * elapsed) / 1000;
+                }
+                before = now;
+            }
+
+            function render(){
+                requestAnimationFrame(render);
+                draw();
+                animate();
+            }
+
+            function load(){
+                fetch('/Robot_squat.json')
+                    .then(res => res.json())
+                    .then(part =>{
+                        // Configure VAO
+                        const vao = gl.createVertexArray();
+                        gl.bindVertexArray(vao);
+
+                        // Vertices
+                        const vertexBufferObject = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBufferObject);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part.vertices), gl.STATIC_DRAW);
+                        // Configure instructions for VAO
+                        gl.enableVertexAttribArray(program.aVertexPosition);
+                        gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+
+                        // Normals
+                        const normalBufferObject = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, normalBufferObject);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part.normals), gl.STATIC_DRAW);
+                        // Configure instructions for VAO
+                        gl.enableVertexAttribArray(program.aVertexNormal);
+                        gl.vertexAttribPointer(program.aVertexNormal, 3, gl.FLOAT, false, 0, 0);
+                        
+                        // Indices
+                        const indexBufferObject = gl.createBuffer();
+                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBufferObject);
+                        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(part.indices), gl.STATIC_DRAW);
+                        
+                        // Set values to be able to draw later
+                        part.vao = vao;
+                        part.ibo = indexBufferObject;
+
+                        // Push onto `parts` array for later access
+                        robot.push(part);
+
+                        // Clean
+                        gl.bindVertexArray(null);
+                        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+                    });
+            }
+
+            function draw(){
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+                // We will discuss these operations in later chapters
+                mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 10000);
+                mat4.identity(modelViewMatrix);
+                mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, distance]);
+                mat4.translate(modelViewMatrix, modelViewMatrix, [0, height_distance, 0]);
+                mat4.rotate(modelViewMatrix, modelViewMatrix, 30 * Math.PI / 180, [1, 0, 0]);
+                mat4.rotate(modelViewMatrix, modelViewMatrix, angle * Math.PI / 180, [0, 1, 0]);
+
+                mat4.copy(normalMatrix, modelViewMatrix);
+                mat4.invert(normalMatrix, normalMatrix);
+                mat4.transpose(normalMatrix, normalMatrix);
+
+                gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+                gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
+
+                // Bind
+                gl.bindVertexArray(robot[0].vao);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, robot[0].ibo);
+
+                // Draw
+                gl.drawElements(gl.TRIANGLES, robot[0].indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Clean
+                gl.bindVertexArray(null);
+                gl.bindBuffer(gl.ARRAY_BUFFER, null);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+            }
+
+            function init(){
+                initProgram();
+                initLights();
+                load();
+                render();
+
+                initControls();
+            }
+
+            window.onload = init;
+        </script>
+
+    </head>
+
+    <body>
+        <canvas id="webgl-canvas" width="1024" height="768">
+            This web browser doesn't support HTML5 canvas.
+        </canvas>
+    </body>
+
+</html>
