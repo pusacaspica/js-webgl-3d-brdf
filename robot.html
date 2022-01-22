@@ -31,10 +31,55 @@
                 lightPosition = [100, 400, 100],
                 modelViewMatrix = mat4.create(),
                 projectionMatrix = mat4.create(),
-                vertexShaderSource, fragShaderSource;
+                robotJson;
             
+            async function getShader(type, path){
+                let shaderSource;
+                
+                await fetch(path).then(
+                    resp => resp.text()
+                ).then(
+                    (result)=>{
+                        shaderSource = result;
+                    }
+                ).catch(err=>console.log(err));
+
+                let shader;
+                if(type === 'vertex'){
+                    shader = gl.createShader(gl.VERTEX_SHADER);
+                } else if (type === 'fragment'){
+                    shader = gl.createShader(gl.FRAGMENT_SHADER);
+                } else {
+                    return null;
+                }
+
+                gl.shaderSource(shader, shaderSource);
+                gl.compileShader(shader);
+
+                if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
+                    console.error(gl.getShaderInfoLog(shader));
+                    return null;
+                }
+
+                return shader;
+            }
+
+            async function getModel(path){
+                let model;
+
+                await fetch(path).then(
+                    resp=>resp.json()
+                ).then(
+                    (result)=>{
+                        model = result;
+                    }
+                )
+
+                return model;
+            }
+
             // Global variables to use throughout application
-            function initProgram(){
+            async function initProgram(){
                 const canvas = document.getElementById('webgl-canvas');
 
                 gl = canvas.getContext('webgl2') || console.error('WebGL2 is not available in your browser.');
@@ -43,33 +88,9 @@
                 gl.depthFunc(gl.LEQUAL);
 
                 program = gl.createProgram();
-                
-                fetch("robot_vertex.glsl").then( resp => resp.text()).then(
-                    vertexShaderSource =>{ 
-                        //
-                        console.log(vertexShaderSource);
-                    }
-                )
 
-                fetch("robot_frag.glsl").then( resp => resp.text()).then(
-                    fragShaderSource =>{ 
-                        console.log(fragShaderSource);
-                    }
-                )
-
-                var vertexShader = gl.createShader(gl.VERTEX_SHADER), fragShader = gl.createShader(gl.FRAGMENT_SHADER);
-                gl.shaderSource(vertexShader, vertexShaderSource); gl.shaderSource(fragShader, fragShaderSource);
-                gl.compileShader(vertexShader); gl.compileShader(fragShader);
-
-                if(!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)){
-                    console.error(gl.getShaderInfoLog(vertexShader));
-                    return null;
-                }
-
-                if(!gl.getShaderParameter(fragShader, gl.COMPILE_STATUS)){
-                    console.error(gl.getShaderInfoLog(fragShader));
-                    return null;
-                }
+                let vertexShader = await getShader('vertex', 'robot_vertex.sh');
+                let fragShader = await getShader('fragment', 'robot_frag.sh');
                 
                 gl.attachShader(program, vertexShader);
                 gl.attachShader(program, fragShader);
@@ -78,8 +99,6 @@
                 if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
                     return console.error('Could not initialize shaders.');
                 }
-
-                gl.useProgram(program);
 
                 // Attributes to be loaded into program
                 const attributes = [
@@ -99,7 +118,17 @@
                     'uShininess'
                 ];
 
-                program.load(attributes, uniforms);
+                gl.useProgram(program);
+
+                attributes.forEach(attribute =>{
+                    program.attribute = gl.getAttribLocation(program, attribute);
+                })
+
+                uniforms.forEach(uniform => {
+                    program.uniform = gl.getUniformLocation(program, uniform);
+                })
+
+                robotJson = await getModel('Robot_tpose.json');
             }
 
             function initLights(){
@@ -130,46 +159,43 @@
             }
 
             function load(){
-                fetch('/Robot_squat.json')
-                    .then(res => res.json())
-                    .then(part =>{
-                        // Configure VAO
-                        const vao = gl.createVertexArray();
-                        gl.bindVertexArray(vao);
 
-                        // Vertices
-                        const vertexBufferObject = gl.createBuffer();
-                        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBufferObject);
-                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part.vertices), gl.STATIC_DRAW);
-                        // Configure instructions for VAO
-                        gl.enableVertexAttribArray(program.aVertexPosition);
-                        gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+                // Configure VAO
+                const vao = gl.createVertexArray();
+                gl.bindVertexArray(vao);
 
-                        // Normals
-                        const normalBufferObject = gl.createBuffer();
-                        gl.bindBuffer(gl.ARRAY_BUFFER, normalBufferObject);
-                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(part.normals), gl.STATIC_DRAW);
-                        // Configure instructions for VAO
-                        gl.enableVertexAttribArray(program.aVertexNormal);
-                        gl.vertexAttribPointer(program.aVertexNormal, 3, gl.FLOAT, false, 0, 0);
+                // Vertices
+                const vertexBufferObject = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBufferObject);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(robotJson.vertices), gl.STATIC_DRAW);
+                // Configure instructions for VAO
+                gl.enableVertexAttribArray(program.aVertexPosition);
+                gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+
+                // Normals
+                const normalBufferObject = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBufferObject);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(robotJson.normals), gl.STATIC_DRAW);
+                // Configure instructions for VAO
+                gl.enableVertexAttribArray(program.aVertexNormal);
+                gl.vertexAttribPointer(program.aVertexNormal, 3, gl.FLOAT, false, 0, 0);
                         
-                        // Indices
-                        const indexBufferObject = gl.createBuffer();
-                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBufferObject);
-                        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(part.indices), gl.STATIC_DRAW);
+                // Indices
+                const indexBufferObject = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBufferObject);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(robotJson.indices), gl.STATIC_DRAW);
                         
-                        // Set values to be able to draw later
-                        part.vao = vao;
-                        part.ibo = indexBufferObject;
+                // Set values to be able to draw later
+                robotJson.vao = vao;
+                robotJson.ibo = indexBufferObject;
 
-                        // Push onto `parts` array for later access
-                        robot.push(part);
+                // Push onto `parts` array for later access
+                robot.push(robotJson);
 
-                        // Clean
-                        gl.bindVertexArray(null);
-                        gl.bindBuffer(gl.ARRAY_BUFFER, null);
-                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-                    });
+                // Clean
+                gl.bindVertexArray(null);
+                gl.bindBuffer(gl.ARRAY_BUFFER, null);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
             }
 
             function draw(){
@@ -177,7 +203,7 @@
                 gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
                 // We will discuss these operations in later chapters
-                mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 10000);
+                mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 100000);
                 mat4.identity(modelViewMatrix);
                 mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, distance]);
                 mat4.translate(modelViewMatrix, modelViewMatrix, [0, height_distance, 0]);
@@ -206,12 +232,14 @@
             }
 
             function init(){
-                initProgram();
-                initLights();
-                load();
-                render();
+                initProgram().then( () => {
+                        initLights();
+                        load();
+                        render();
 
-                initControls();
+                        //initControls();
+                    }
+                )
             }
 
             window.onload = init;
