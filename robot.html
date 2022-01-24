@@ -1,165 +1,434 @@
+<!DOCTYPE html>
 <html>
 
-    <head>
-        <title>Trabalho 2 -- Alternative BDSF</title>
+<head>
+    <title>Trabalho 2 -- Alternative BDSF</title>
+    <meta charset="utf-8">
+    <!-- libraries -->
+    <!--link rel="stylesheet" href="/common/lib/normalize.css"-->
+    <script type="text/javascript" src="/common/lib/gl-matrix.js"></script>
+    <script type="text/javascript" src="/common/lib/dat.gui.js"></script>
 
-        <!-- libraries -->
-        <!--link rel="stylesheet" href="/common/lib/normalize.css"-->
-        <script type="text/javascript" src="/common/lib/gl-matrix.js"></script>
-        <script type="text/javascript" src="/common/lib/dat.gui.js"></script>
-        
-        <!-- modules -->
-        <script type="text/javascript" src="/common/js/utils.js"></script>
-        <script type="text/javascript" src="/common/js/Program.js"></script>
+    <!-- modules -->
+    <script type="text/javascript" src="/common/js/utils.js"></script>
+    <script type="text/javascript" src="/common/js/Program.js"></script>
 
+    <link rel="shortcut icon" href="#">
 
-        <script type="text/javascript">
-            'use strict';
-
-            //Global variables
-            let
-                gl,
-                program,
-                angle = 0,
-                robot = [],
-                before = 0,
-                shininess = 24,
-                distance = -1750,
-                height_distance = -125,
-                normalMatrix = mat4.create(),
-                clearColor = [0.2, 0.2, 0.35],
-                lightPosition = [100, 400, 100],
-                modelViewMatrix = mat4.create(),
-                projectionMatrix = mat4.create(),
-                robotJson;
+    <script id="vertex-shader" type="x-shader/x-vertex">
+            #version 300 es
+            precision highp float;
+            precision highp int;
             
-            async function getShader(type, path){
-                let shaderSource;
-                
-                await fetch(path).then(
-                    resp => resp.text()
-                ).then(
-                    (result)=>{
-                        shaderSource = result;
-                    }
-                ).catch(err=>console.log(err));
+            uniform vec3 uLightPosition;
+            uniform vec3 uLightAmbient;
+            uniform vec3 uMaterialDiffuse;
+            uniform vec3 uEyePosition;
 
-                let shader;
-                if(type === 'vertex'){
-                    shader = gl.createShader(gl.VERTEX_SHADER);
-                } else if (type === 'fragment'){
-                    shader = gl.createShader(gl.FRAGMENT_SHADER);
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            uniform mat4 uNormalMatrix;
+            uniform vec4 uLightDiffuse;
+            uniform vec4 uLightSpecular;
+            
+            uniform highp int uTextureActive;
+            uniform highp int uShaderSelection;
+
+            uniform highp float uShininess;
+        
+            in vec3 aVertexPosition;
+            in vec3 aVertexNormal;
+            in vec3 aVertexColor;
+            in vec2 aVertexTextureCoords;
+        
+            out vec4 fragPos;
+            out vec4 vColor;
+            out vec3 vNormal;
+            out vec3 vLightRay;
+            out vec3 vEyeVector;
+            out vec2 vTextureCoords;
+
+            void vertex_gouraud(void){
+                vec3 normal = vec3(uNormalMatrix * vec4(aVertexNormal, 0.0));
+                vec3 normalizedLightPosition = normalize(-uLightPosition);
+
+                float lambertTerm = dot(normal, -normalizedLightPosition);
+
+                vec4 Iambient = vec4(uLightAmbient, 1.0);
+                vec4 Idiffuse = vec4(0.0, 0.0, 0.0, 1.0);
+                vec4 Ispecular = vec4(0.0, 0.0, 0.0, 1.0);
+
+                if(lambertTerm > 0.0){
+                    vec3 reflecc = reflect(normalizedLightPosition, normal);
+                    vec3 view = normalize(-uEyePosition);
+                    float specularTerm = pow( max( dot(reflecc, view), 0.0), uShininess);
+                    Idiffuse = vec4(uMaterialDiffuse, 1.0) * lambertTerm;
+                    Ispecular = uLightSpecular * specularTerm;
+                }
+                vColor = vec4(vec3(Iambient+Idiffuse+Ispecular), 1.0);
+
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+
+                if(uTextureActive == 1){
+                    vTextureCoords = aVertexTextureCoords;
+                }
+            }
+
+            void vertex_phong(void){
+                vec4 vertex = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+                vNormal = vec3(uNormalMatrix * vec4(aVertexNormal, 0.0));
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+                fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+                if(uTextureActive == 1){
+                    vTextureCoords = aVertexTextureCoords;
+                }
+            }
+        
+            void vertex_lambert(void){
+                vec4 vertex = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+                vec4 light = vec4(uLightPosition,1.0);
+            
+                // Set varyings to be used in fragment shader
+                vNormal = vec3(uNormalMatrix * vec4(aVertexNormal, 1.0));
+                vLightRay = vertex.xyz - light.xyz;
+                vEyeVector = -vec3(vertex.xyz);
+            
+                gl_Position = uProjectionMatrix * vertex;
+            }
+
+            void main(void){
+                if(uShaderSelection == 0){
+                    vertex_lambert();
+                } else if (uShaderSelection == 1){
+                    vertex_gouraud();
                 } else {
-                    return null;
+                    vertex_phong();
                 }
+            }
+        </script>
 
-                gl.shaderSource(shader, shaderSource);
-                gl.compileShader(shader);
+    <script id="fragment-shader" type="x-shader/x-fragment">
+            #version 300 es
+            precision highp float;
+            precision highp int;
 
-                if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
-                    console.error(gl.getShaderInfoLog(shader));
-                    return null;
+            uniform vec3 uLightPosition;
+            uniform vec3 uLightAmbient;
+            uniform vec3 uMaterialDiffuse;
+            uniform vec3 uMaterialSpecular;
+            uniform vec3 uEyePosition;
+
+            uniform mat4 uNormalMatrix;
+            uniform vec4 uLightDiffuse;
+            uniform vec4 uLightSpecular;
+
+            uniform highp int uTextureActive;
+            uniform highp int uShaderSelection;
+
+            uniform highp float uShininess;
+
+            uniform sampler2D uSampler;
+        
+            in vec4 vColor;
+            in vec4 fragPos;
+            in vec3 vNormal;
+            in vec3 vLightRay;
+            in vec3 vEyeVector;
+            in vec2 vTextureCoords;
+        
+            out vec4 fragColor;
+
+            void frag_gouraud(void){
+                vec4 color;
+                if(uTextureActive == 1){
+                    color = vColor * texture(uSampler, vTextureCoords);
+                } else {
+                    color = vColor;
                 }
-
-                return shader;
+                fragColor = color;
             }
 
-            async function getModel(path){
-                let model;
+            void frag_phong(void){
+                vec4 color;
+                vec3 normal = vNormal;
+                vec3 pos = fragPos.xyz;
+                vec3 normalizedLightPosition = normalize(pos-uLightPosition);
 
-                await fetch(path).then(
-                    resp=>resp.json()
-                ).then(
-                    (result)=>{
-                        model = result;
+                float lambertTerm = dot(normal, -normalizedLightPosition);
+
+                vec4 Iambient = vec4(uLightAmbient, 1.0);
+                vec4 Idiffuse = vec4(0.0, 0.0, 0.0, 1.0);
+                vec4 Ispecular = vec4(0.0, 0.0, 0.0, 1.0);
+
+                if(lambertTerm > 0.0){
+                    vec3 reflecc = reflect(normalizedLightPosition, normal);
+                    vec3 view = normalize(-uEyePosition);
+                    float specularTerm = pow( max( dot(reflecc, view), 0.0), uShininess);
+
+                    Idiffuse = vec4(uMaterialDiffuse, 1.0) * lambertTerm;
+                    Ispecular = uLightSpecular * specularTerm;
+                }
+
+                color = vec4(vec3(Iambient + Idiffuse + Ispecular), 1.0);
+                if(uTextureActive == 1){
+                    color = color * texture(uSampler, vTextureCoords);
+                }
+
+                fragColor = color;
+            }
+        
+            void frag_lambert(void) {
+              vec3 L = normalize(vLightRay);
+              vec3 N = normalize(vNormal);
+              float lambertTerm = dot(N, -L);
+              vec3 finalColor = uLightAmbient;
+        
+              if (lambertTerm > 0.0) {
+                finalColor += uMaterialDiffuse * lambertTerm;
+                vec3 E = normalize(vEyeVector);
+                vec3 R = reflect(L, N);
+                float specular = pow( max(dot(R, E), 0.0), uShininess);
+                finalColor += uMaterialSpecular * specular;
+              }
+        
+              fragColor = vec4(finalColor, 1.0);
+            }
+
+            void main(void){
+                if(uShaderSelection == 0){
+                    frag_lambert();
+                } else if (uShaderSelection == 1){
+                    frag_gouraud();
+                } else {
+                    frag_phong();
+                }
+            }
+        </script>
+
+
+    <script type="text/javascript">
+        'use strict';
+
+        //Global variables
+        let
+            gl,
+            program,
+            robot = [],
+            before = 0,
+            shininess = 16,
+            textureActive = 0,
+            shaderSelection = 0,
+            normalMatrix = mat4.create(),
+            clearColor = [0.2, 0.2, 0.35],
+            lightPosition = [-0, 50, 0],
+            modelViewMatrix = mat4.create(),
+            projectionMatrix = mat4.create(),
+            xAngle = 25.0, yAngle = 0.0, zAngle = -0.0,
+            zDistance = -20, yDistance = 0, xDistance = 0,
+            transformPosition = [xDistance, yDistance, zDistance],
+            zRot = zAngle * Math.PI / 180, yRot = yAngle * Math.PI / 180, xRot = xAngle * Math.PI / 180,
+            transformRotate = [xRot, yRot, zRot];
+
+        async function getShader(type, path) {
+            let shaderSource;
+
+            await fetch(path).then(
+                resp => resp.text()
+            ).then(
+                (result) => {
+                    shaderSource = result;
+                }
+            ).catch(err => console.log(err));
+
+            let shader;
+            if (type === 'vertex') {
+                shader = gl.createShader(gl.VERTEX_SHADER);
+            } else if (type === 'fragment') {
+                shader = gl.createShader(gl.FRAGMENT_SHADER);
+            } else {
+                return null;
+            }
+
+            gl.shaderSource(shader, shaderSource);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                return null;
+            }
+
+            return shader;
+        }
+
+        async function getModel(path) {
+            let model;
+
+            await fetch(path).then(
+                resp => resp.json()
+            ).then(
+                (result) => {
+                    model = result;
+                }
+            ).catch(err => console.log(err));
+
+            return model;
+        }
+
+        // Global variables to use throughout application
+        async function initProgram() {
+            const canvas = document.getElementById('webgl-canvas');
+
+            gl = canvas.getContext('webgl2') || console.error('WebGL2 is not available in your browser.');
+            gl.clearColor(...clearColor, 1);
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LEQUAL);
+
+            program = new Program(gl, 'vertex-shader', 'fragment-shader');
+
+            //let vertexShader = /*gl.createShader(gl.VERTEX_SHADER), rawVertexShaderSrc = document.getElementById('vertex-shader'); let vertexShaderSrc = rawVertexShaderSrc.text.trim(); gl.shaderSource(vertexShader, vertexShaderSrc); gl.compileShader(vertexShader);*/ await getShader('vertex', 'robot_vertex.glsl');
+            //let fragShader = /*gl.createShader(gl.FRAGMENT_SHADER), rawFragShaderSrc = document.getElementById('fragment-shader'); let fragShaderSrc = rawFragShaderSrc.text.trim(); gl.shaderSource(fragShader, fragShaderSrc); gl.compileShader(fragShader);*/ await getShader('fragment', 'robot_frag.glsl');
+
+            //gl.attachShader(program, vertexShader);
+            //gl.attachShader(program, fragShader);
+            ///gl.linkProgram(program);
+
+            //gl.useProgram(program);
+
+            /*if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                return console.error('Could not initialize shaders.');
+            }*/
+
+            // Attributes to be loaded into program
+            const attributes = [
+                'aVertexPosition',
+                'aVertexNormal',
+                'aVertexColor',
+                'aVertexTextureCoords',
+            ];
+
+            // Uniforms to be loaded into program
+            const uniforms = [
+                'uProjectionMatrix',
+                'uModelViewMatrix',
+                'uNormalMatrix',
+                'uLightAmbient',
+                'uLightDiffuse',
+                'uLightSpecular',
+                'uLightPosition',
+                'uTextureActive',
+                'uMaterialSpecular',
+                'uMaterialDiffuse',
+                'uEyePosition',
+                'uShininess',
+                'uSampler',
+                'uShaderSelection'
+            ];
+
+            /*attributes.forEach(attribute =>{
+                program.attribute = gl.getAttribLocation(program, attribute);
+            })
+
+            uniforms.forEach(uniform => {
+                program.uniform = gl.getUniformLocation(program, uniform);
+            })
+
+            robotJson = await getModel('Robot_tpose.json');
+            robot.push(robotJson);*/
+            program.load(attributes, uniforms);
+            gl.uniform1i(program.uTextureActive, textureActive);
+        }
+
+        function initLights() {
+            gl.uniform3fv(program.uLightPosition, lightPosition);
+            gl.uniform3f(program.uLightAmbient, 0.2, 0.2, 0.2);
+            gl.uniform3f(program.uLightSpecular, 0.6, 0.6, 0.6);
+            gl.uniform3f(program.uLightDiffuse, 1, 1, 1);
+            gl.uniform3f(program.uMaterialSpecular, 1, 1, 1);
+            gl.uniform3f(program.uMaterialDiffuse, 1, 1, 1);
+            gl.uniform1f(program.uShininess, shininess);
+        }
+
+        function initControls() {
+            var axis = ["x", "y", "z"];
+
+            utils.configureControls(
+                {
+                    LightsControl:{
+                        Position:{
+                            ...['lightPosition X', 'lightPosition Y', 'lightPosition Z'].reduce((result, name, i) => {
+                                result[name] = {
+                                    value: lightPosition[i],
+                                    min: -100, max: 100, step: 0.00001, onChange(v, state){
+                                        lightPosition[i] = v;
+                                    }
+                                };
+                                return result;
+                            }, {}),
+                        },
+                        'Shininess':{
+                            value: shininess, min: 0, max: 5, step: 0.00001, onChange(v, state){shininess = v;}
+                        }
+                    },
+                    Shader:{
+                        'Shader Selection': {
+                            value: "Lambert", options: ["Lambert", "Gouraud", "Phong"],
+                            onChange: v => {
+                                if(v == "Lambert"){
+                                    shaderSelection = 0;
+                                } else if (v == "Gouraud"){
+                                    shaderSelection = 1;
+                                } else {
+                                    shaderSelection = -1;
+                                }
+                            }
+                        },
+                    },
+                    SceneControl:{
+                        ...['Translate X', 'Translate Y', 'Translate Z'].reduce((result, name, i) => {
+                            result[name] = {
+                                value: transformPosition[i],
+                                min: -50, max: 50, step: 0.00001, onChange(v, state){
+                                    transformPosition[i] = v;
+                                }
+                            };
+                            return result;
+                        }, {}),
+                        ...['Rotate X', 'Rotate Y', 'Rotate Z'].reduce((result, name, i) => {
+                            result[name] = {
+                                value: transformRotate[i],
+                                min: -180, max: 180, step: 0.00001,
+                                onChange(v, state){
+                                    transformRotate = [
+                                        state['Rotate X']*Math.PI/180,
+                                        state['Rotate Y']*Math.PI/180,
+                                        state['Rotate Z']*Math.PI/180
+                                    ];
+                                }
+                            };
+                            return result;
+                        }, {})
                     }
-                )
-
-                return model;
-            }
-
-            // Global variables to use throughout application
-            async function initProgram(){
-                const canvas = document.getElementById('webgl-canvas');
-
-                gl = canvas.getContext('webgl2') || console.error('WebGL2 is not available in your browser.');
-                gl.clearColor(...clearColor, 1);
-                gl.enable(gl.DEPTH_TEST);
-                gl.depthFunc(gl.LEQUAL);
-
-                program = gl.createProgram();
-
-                let vertexShader = await getShader('vertex', 'robot_vertex.sh');
-                let fragShader = await getShader('fragment', 'robot_frag.sh');
-                
-                gl.attachShader(program, vertexShader);
-                gl.attachShader(program, fragShader);
-                gl.linkProgram(program);
-
-                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                    return console.error('Could not initialize shaders.');
                 }
+            );
+        }
 
-                // Attributes to be loaded into program
-                const attributes = [
-                    'aVertexPosition',
-                    'aVertexNormal'
-                ];
-
-                // Uniforms to be loaded into program
-                const uniforms = [
-                    'uProjectionMatrix',
-                    'uModelViewMatrix',
-                    'uNormalMatrix',
-                    'uLightAmbient',
-                    'uLightPosition',
-                    'uMaterialSpecular',
-                    'uMaterialDiffuse',
-                    'uShininess'
-                ];
-
-                gl.useProgram(program);
-
-                attributes.forEach(attribute =>{
-                    program.attribute = gl.getAttribLocation(program, attribute);
-                })
-
-                uniforms.forEach(uniform => {
-                    program.uniform = gl.getUniformLocation(program, uniform);
-                })
-
-                robotJson = await getModel('Robot_tpose.json');
+        function animate() {
+            const now = new Date().getTime();
+            if (before) {
+                const elapsed = now - before;
+                yRot += (Math.PI * elapsed) / 2500;
             }
+            before = now;
+        }
 
-            function initLights(){
-                gl.uniform3fv(program.uLightPosition, lightPosition);
-                gl.uniform3f(program.uLightAmbient, 0.1, 0.1, 0.1);
-                gl.uniform3f(program.uMaterialSpecular, 0.5, 0.5, 0.5);
-                gl.uniform3f(program.uMaterialDiffuse, 0.8, 0.8, 0.8);
-                gl.uniform1f(program.uShininess, shininess);
-            }
+        function render() {
+            requestAnimationFrame(render);
+            draw();
+            animate();
+        }
 
-            function initControls(){
-
-            }
-
-            function animate(){
-                const now = new Date().getTime();
-                if(before){
-                    const elapsed = now - before;
-                    angle += (90 * elapsed) / 1000;
-                }
-                before = now;
-            }
-
-            function render(){
-                requestAnimationFrame(render);
-                draw();
-                animate();
-            }
-
-            function load(){
-
+        function load() {
+            fetch('Robot_2.json').then(resp => resp.json()).then(robotJson => {
                 // Configure VAO
                 const vao = gl.createVertexArray();
                 gl.bindVertexArray(vao);
@@ -179,78 +448,95 @@
                 // Configure instructions for VAO
                 gl.enableVertexAttribArray(program.aVertexNormal);
                 gl.vertexAttribPointer(program.aVertexNormal, 3, gl.FLOAT, false, 0, 0);
-                        
+
                 // Indices
                 const indexBufferObject = gl.createBuffer();
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBufferObject);
                 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(robotJson.indices), gl.STATIC_DRAW);
-                        
+                
+                // Color
+                const colorBufferObject = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, colorBufferObject);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Float32Array(robotJson.vertices), gl.STATIC_DRAW);
+                gl.enableVertexAttribArray(program.aVertexColor);
+                gl.vertexAttribPointer(program.aVertexColor, 3, gl.FLOAT, false, 0, 0);
+
                 // Set values to be able to draw later
                 robotJson.vao = vao;
                 robotJson.ibo = indexBufferObject;
 
-                // Push onto `parts` array for later access
+                //push the matrices into robot array
                 robot.push(robotJson);
+                console.log(robot);
 
                 // Clean
                 gl.bindVertexArray(null);
                 gl.bindBuffer(gl.ARRAY_BUFFER, null);
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
             }
+            )
+        }
 
-            function draw(){
-                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        function draw() {
+            gl.clearColor(...clearColor, 1);
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LEQUAL);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-                // We will discuss these operations in later chapters
-                mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 100000);
-                mat4.identity(modelViewMatrix);
-                mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, distance]);
-                mat4.translate(modelViewMatrix, modelViewMatrix, [0, height_distance, 0]);
-                mat4.rotate(modelViewMatrix, modelViewMatrix, 30 * Math.PI / 180, [1, 0, 0]);
-                mat4.rotate(modelViewMatrix, modelViewMatrix, angle * Math.PI / 180, [0, 1, 0]);
+            gl.uniform1i(program.uShaderSelection, shaderSelection);
+            gl.uniform1f(program.uShininess, shininess);
 
-                mat4.copy(normalMatrix, modelViewMatrix);
-                mat4.invert(normalMatrix, normalMatrix);
-                mat4.transpose(normalMatrix, normalMatrix);
+            // Light coordinates
+            gl.uniform3fv(program.uLightPosition, lightPosition);
 
-                gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
-                gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
-                gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
+            // Camera coordinates
+            mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 5000);
+            mat4.identity(modelViewMatrix);
+            mat4.translate(modelViewMatrix, modelViewMatrix, transformPosition);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[0], [1, 0, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[1], [0, 1, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[2], [0, 0, 1]);
 
-                // Bind
-                gl.bindVertexArray(robot[0].vao);
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, robot[0].ibo);
+            mat4.copy(normalMatrix, modelViewMatrix);
+            mat4.invert(normalMatrix, normalMatrix);
+            mat4.transpose(normalMatrix, normalMatrix);
 
-                // Draw
-                gl.drawElements(gl.TRIANGLES, robot[0].indices.length, gl.UNSIGNED_SHORT, 0);
+            gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+            gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
 
-                // Clean
-                gl.bindVertexArray(null);
-                gl.bindBuffer(gl.ARRAY_BUFFER, null);
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-            }
+            // Bind
+            gl.bindVertexArray(robot[0].vao);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, robot[0].ibo);
 
-            function init(){
-                initProgram().then( () => {
-                        initLights();
-                        load();
-                        render();
+            // Draw
+            gl.drawElements(gl.TRIANGLES, robot[0].indices.length, gl.UNSIGNED_SHORT, 0);
 
-                        //initControls();
-                    }
-                )
-            }
+            // Clean
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        }
 
-            window.onload = init;
-        </script>
+        function init() {
+            initProgram();
+            initLights();
+            initControls();
+            load();
+            render();
 
-    </head>
+        }
 
-    <body>
-        <canvas id="webgl-canvas" width="1024" height="768">
-            This web browser doesn't support HTML5 canvas.
-        </canvas>
-    </body>
+        window.onload = init;
+    </script>
+
+</head>
+
+<body>
+    <canvas id="webgl-canvas" width="1024" height="768">
+        This web browser doesn't support HTML5 canvas.
+    </canvas>
+</body>
 
 </html>
