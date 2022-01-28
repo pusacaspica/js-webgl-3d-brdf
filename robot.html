@@ -43,10 +43,28 @@
         
             out vec4 fragPos;
             out vec4 vColor;
-            out vec3 vNormal;
+            out vec4 vNormal;
             out vec3 vLightRay;
             out vec3 vEyeVector;
             out vec2 vTextureCoords;
+
+            void vertex_ward(void){
+
+            }
+
+            void vertex_cook_torrance(void){
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+
+                vNormal = vec4(uNormalMatrix * vec4(aVertexNormal,0.0));
+
+                fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+
+                vLightRay = uLightPosition - vec3(fragPos);
+
+                vEyeVector = -(vec3(uModelViewMatrix) * aVertexPosition);
+
+                vColor = vec4(aVertexColor, 1.0);
+            }
 
             void vertex_gouraud(void){
                 vec3 normal = vec3(uNormalMatrix * vec4(aVertexNormal, 0.0));
@@ -76,7 +94,7 @@
 
             void vertex_phong(void){
                 vec4 vertex = uModelViewMatrix * vec4(aVertexPosition, 1.0);
-                vNormal = vec3(uNormalMatrix * vec4(aVertexNormal, 0.0));
+                vNormal = vec4(uNormalMatrix * vec4(aVertexNormal, 0.0));
                 gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
                 fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
                 if(uTextureActive == 1){
@@ -89,7 +107,7 @@
                 vec4 light = vec4(uLightPosition,1.0);
             
                 // Set varyings to be used in fragment shader
-                vNormal = vec3(uNormalMatrix * vec4(aVertexNormal, 1.0));
+                vNormal = vec4(uNormalMatrix * vec4(aVertexNormal, 1.0));
                 vLightRay = vertex.xyz - light.xyz;
                 vEyeVector = -vec3(vertex.xyz);
             
@@ -101,6 +119,8 @@
                     vertex_lambert();
                 } else if (uShaderSelection == 1){
                     vertex_gouraud();
+                } else if(uShaderSelection == 2){
+                    vertex_cook_torrance();
                 } else {
                     vertex_phong();
                 }
@@ -109,6 +129,9 @@
 
     <script id="fragment-shader" type="x-shader/x-fragment">
             #version 300 es
+
+            #define PI 3.1415926538
+
             precision highp float;
             precision highp int;
 
@@ -126,17 +149,59 @@
             uniform highp int uShaderSelection;
 
             uniform highp float uShininess;
+            uniform highp float uRoughness;
+            uniform highp float uDiffuse; //ye olde uDiffuse
+            uniform highp float uReflectance; //ye olde uReflectance
 
             uniform sampler2D uSampler;
         
             in vec4 vColor;
             in vec4 fragPos;
-            in vec3 vNormal;
+            in vec4 vNormal;
             in vec3 vLightRay;
             in vec3 vEyeVector;
             in vec2 vTextureCoords;
         
             out vec4 fragColor;
+
+            void frag_ward(void){
+
+            }
+
+            void frag_cook_torrance(void){
+                vec3 lightDir = normalize(-vLightRay);
+                vec3 normal = vec3(vNormal);
+
+                float NdotL = dot(normal, lightDir); //N for Normal, L for Light Direction
+
+                float specularTerm = 0.0;
+                if(NdotL > 0.0){
+                    vec3 halfVector = normalize(lightDir + vEyeVector);
+                    float NdotH = max(dot(normal, halfVector), 0.0); //N for normal, H for Half Vector
+                    float NdotV = max(dot(normal, vEyeVector), 0.0); //N for normal, V for Eye Vector
+                    float VdotH = max(dot(vEyeVector, halfVector), 0.0); //V for Eye Vector, H for Half Vector
+                    float NdotM = max(dot(normal, normal), 0.0); //N for normal, M for microfacets normals
+                    float mSquare = uRoughness * uRoughness;
+
+                    //geometric attenuation following Cook-Torrance formula
+                    float second = (2.0 * NdotV * NdotM)/VdotH; float third = (2.0 * NdotM * NdotL)/VdotH;
+                    float geoAtt = max(second, third); geoAtt = max(geoAtt, 1.0);
+
+                    //Microfacet distribution function using Beckmann's distribution
+                    float r1 = 1.0/(PI * mSquare * pow(NdotH, 4.0));
+                    float r2 = (NdotH * NdotH - 1.0)/(mSquare * NdotH * NdotH);
+                    float roughness = r1 * exp(r2);
+
+                    //Fresnel using Schlick's approximation
+                    float fresnel = pow(1.0 - VdotH, 5.0);
+                    fresnel *= (1.0 - uReflectance);
+                    fresnel += uReflectance;
+
+                    specularTerm = (fresnel * geoAtt * roughness)/(NdotV * NdotL * PI);
+                }
+                vec3 finalValue =/* uLightAmbient +*/ NdotL * ((uDiffuse * vec3(255.0, 255.0, 255.0)) + (vec3(0.75, 0.75, 0.75)*specularTerm*(1.0 - uDiffuse)));
+                fragColor = vec4(finalValue, 1.0);
+            }
 
             void frag_gouraud(void){
                 vec4 color;
@@ -150,7 +215,7 @@
 
             void frag_phong(void){
                 vec4 color;
-                vec3 normal = vNormal;
+                vec3 normal = vNormal.xyz;
                 vec3 pos = fragPos.xyz;
                 vec3 normalizedLightPosition = normalize(pos-uLightPosition);
 
@@ -166,20 +231,18 @@
                     float specularTerm = pow( max( dot(reflecc, view), 0.0), uShininess);
 
                     Idiffuse = vec4(uMaterialDiffuse, 1.0) * lambertTerm;
-                    Ispecular = uLightSpecular * specularTerm;
+                    Ispecular = vec4(uMaterialSpecular, 1.0) * uLightSpecular * specularTerm;
                 }
-
-                color = vec4(vec3(Iambient + Idiffuse + Ispecular), 1.0);
+                color = vColor + vec4(vec3(Iambient + Idiffuse + Ispecular), 1.0);
                 if(uTextureActive == 1){
                     color = color * texture(uSampler, vTextureCoords);
                 }
-
                 fragColor = color;
             }
         
             void frag_lambert(void) {
               vec3 L = normalize(vLightRay);
-              vec3 N = normalize(vNormal);
+              vec3 N = normalize(vNormal.xyz);
               float lambertTerm = dot(N, -L);
               vec3 finalColor = uLightAmbient;
         
@@ -199,6 +262,8 @@
                     frag_lambert();
                 } else if (uShaderSelection == 1){
                     frag_gouraud();
+                } else if (uShaderSelection == 2){
+                    frag_cook_torrance();
                 } else {
                     frag_phong();
                 }
@@ -217,7 +282,7 @@
             before = 0,
             shininess = 16,
             textureActive = 0,
-            shaderSelection = 0,
+            shaderSelection = 2,
             normalMatrix = mat4.create(),
             clearColor = [0.2, 0.2, 0.35],
             lightPosition = [-0, 50, 0],
@@ -227,7 +292,10 @@
             zDistance = -20, yDistance = 0, xDistance = 0,
             transformPosition = [xDistance, yDistance, zDistance],
             zRot = zAngle * Math.PI / 180, yRot = yAngle * Math.PI / 180, xRot = xAngle * Math.PI / 180,
-            transformRotate = [xRot, yRot, zRot];
+            transformRotate = [xRot, yRot, zRot],
+            diffuse = 0.2, reflectance = 0.1, roughness = 0.8,
+            materialDiffuse = 1.0, materialSpecular = 1.0,
+            lightDiffuse = 1.0, lightSpecular = 0.6, lightAmbient = 0.2;
 
         async function getShader(type, path) {
             let shaderSource;
@@ -321,31 +389,27 @@
                 'uEyePosition',
                 'uShininess',
                 'uSampler',
-                'uShaderSelection'
+                'uShaderSelection',
+                'uRoughness',
+                'uDiffuse',
+                'uReflectance'
             ];
-
-            /*attributes.forEach(attribute =>{
-                program.attribute = gl.getAttribLocation(program, attribute);
-            })
-
-            uniforms.forEach(uniform => {
-                program.uniform = gl.getUniformLocation(program, uniform);
-            })
-
-            robotJson = await getModel('Robot_tpose.json');
-            robot.push(robotJson);*/
             program.load(attributes, uniforms);
             gl.uniform1i(program.uTextureActive, textureActive);
         }
 
         function initLights() {
+
             gl.uniform3fv(program.uLightPosition, lightPosition);
-            gl.uniform3f(program.uLightAmbient, 0.2, 0.2, 0.2);
-            gl.uniform3f(program.uLightSpecular, 0.6, 0.6, 0.6);
-            gl.uniform3f(program.uLightDiffuse, 1, 1, 1);
-            gl.uniform3f(program.uMaterialSpecular, 1, 1, 1);
-            gl.uniform3f(program.uMaterialDiffuse, 1, 1, 1);
+            gl.uniform3f(program.uLightAmbient, lightAmbient, lightAmbient, lightAmbient);
+            gl.uniform3f(program.uLightSpecular, lightSpecular, lightSpecular, lightSpecular);
+            gl.uniform3f(program.uLightDiffuse, lightDiffuse, lightDiffuse, lightDiffuse);
+            gl.uniform3f(program.uMaterialSpecular, materialSpecular, materialSpecular, materialSpecular);
+            gl.uniform3f(program.uMaterialDiffuse, materialDiffuse, materialDiffuse, materialDiffuse);
             gl.uniform1f(program.uShininess, shininess);
+            gl.uniform1f(program.uRoughness, roughness);
+            gl.uniform1f(program.uDiffuse, diffuse);
+            gl.uniform1f(program.uReflectance, reflectance);
         }
 
         function initControls() {
@@ -358,30 +422,60 @@
                             ...['lightPosition X', 'lightPosition Y', 'lightPosition Z'].reduce((result, name, i) => {
                                 result[name] = {
                                     value: lightPosition[i],
-                                    min: -100, max: 100, step: 0.00001, onChange(v, state){
+                                    min: -300, max: 300, step: 0.00001, onChange(v, state){
                                         lightPosition[i] = v;
                                     }
                                 };
                                 return result;
                             }, {}),
                         },
-                        'Shininess':{
-                            value: shininess, min: 0, max: 5, step: 0.00001, onChange(v, state){shininess = v;}
-                        }
                     },
                     Shader:{
                         'Shader Selection': {
-                            value: "Lambert", options: ["Lambert", "Gouraud", "Phong"],
+                            value: "Cook-Torrance", options: ["Lambert", "Gouraud", "Phong", "Cook-Torrance", "Ward"],
                             onChange: v => {
                                 if(v == "Lambert"){
                                     shaderSelection = 0;
                                 } else if (v == "Gouraud"){
                                     shaderSelection = 1;
-                                } else {
+                                } else if (v == "Cook-Torrance") {
+                                    shaderSelection = 2;
+                                }else {
                                     shaderSelection = -1;
                                 }
                             }
                         },
+                        'General Settings (for Lambert, Phong and Gouraud)':{
+                            'Shininess':{
+                                value: shininess, min: 0, max: 5, step: 0.00001, onChange(v, state){shininess = v;}
+                            },
+                            'Material Diffuse': {
+                                value: materialDiffuse, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){materialDiffuse = v;}
+                            },
+                            'Material Specular':{
+                                value: materialSpecular, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){materialSpecular = v;}
+                            },
+                            'Light Ambient':{
+                                value: lightAmbient, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightAmbient = v;}
+                            },
+                            'Light Diffuse':{
+                                value: lightDiffuse, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightDiffuse = v;}
+                            },
+                            'Light Specular':{
+                                value: lightSpecular, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightSpecular = v;}
+                            },
+                        },
+                        'Cook-Torrance Settings': {
+                            'Roughness':{
+                                value: roughness, min: 0.00000001, max: 1, step: 0.00001, onChange(v, state){roughness = v;}
+                            },
+                            'Diffuse':{
+                                value: diffuse, min: 0.00000001, max: 1, step: 0.00001, onChange(v, state){diffuse = v;}
+                            },
+                            'Reflectance':{
+                                value: reflectance, min: 0.00000001, max: 1, step: 0.00001, onChange(v, state){reflectance = v;}
+                            }
+                        }
                     },
                     SceneControl:{
                         ...['Translate X', 'Translate Y', 'Translate Z'].reduce((result, name, i) => {
@@ -486,6 +580,17 @@
 
             gl.uniform1i(program.uShaderSelection, shaderSelection);
             gl.uniform1f(program.uShininess, shininess);
+
+            gl.uniform3f(program.uMaterialDiffuse, materialDiffuse, materialDiffuse, materialDiffuse);
+            gl.uniform3f(program.uMaterialSpecular, materialSpecular, materialSpecular, materialSpecular);
+
+            gl.uniform3f(program.uLightDiffuse, lightDiffuse, lightDiffuse, lightDiffuse);
+            gl.uniform3f(program.uLightSpecular, lightSpecular, lightSpecular, lightSpecular);
+            gl.uniform3f(program.uLightAmbient, lightAmbient, lightAmbient, lightAmbient);
+
+            gl.uniform1f(program.uRoughness, roughness);
+            gl.uniform1f(program.uDiffuse, diffuse);
+            gl.uniform1f(program.uReflectance, reflectance);
 
             // Light coordinates
             gl.uniform3fv(program.uLightPosition, lightPosition);
