@@ -59,7 +59,6 @@
             }
 
             void vertex_cook_torrance(void){
-                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
 
                 vNormal = vec4(uNormalMatrix * vec4(aVertexNormal, 1.0));
 
@@ -68,6 +67,8 @@
                 vLightRay = uLightPosition - vec3(fragPos);
 
                 vEyeVector = -(vec3(uModelViewMatrix) * aVertexPosition);
+
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
             }
 
             void vertex_gouraud(void){
@@ -176,28 +177,29 @@
 
             void frag_ward(void){
                 vec3 lightDir = normalize(vLightRay);
-                vec3 normal = vec3(vNormal);
+                vec3 normal = normalize(vec3(vNormal));
+                vec3 normalizedLightPosition = normalize(fragPos.xyz - uLightPosition);
 
-                float NdotL = max(dot(normal, lightDir), 0.0);
+                float NdotL = dot(normal, lightDir);
 
                 //Diffuse term
                 float diffuseTerm = uDiffuseWard/PI;
 
                 //Specular term, auxiliary stuff
-                vec3 halfVector = normalize(lightDir + vEyeVector);
-                float HdotX = max(dot(halfVector, vec3(1.0, 0.0, 0.0)), 0.0); //X is the X axis
-                float HdotY = max(dot(halfVector, vec3(0.0, 1.0, 0.0)), 0.0); //Y is the Y axis
+                vec3 halfVector = normalize(-lightDir + normalize(vEyeVector));
+                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0) * */normal), 0.0); //X is the X axis
+                float HdotY = max(dot(halfVector, /*vec3(0.0, 1.0, 0.0) * */normal), 0.0); //Y is the Y axis
                 float HdotN = max(dot(halfVector, normal), 0.0);
                 float IdotN = max(dot(vEyeVector, normal), 0.0);
-                float OdotN = max(dot(vLightRay, normal), 0.0);
+                float OdotN = max(dot(normalizedLightPosition, normal), 0.0);
 
                 //Specular term
                 float expoent = (((HdotX/uAlphaX) * (HdotX/uAlphaX)) + ((HdotY/uAlphaY) * (HdotY/uAlphaY)))/(HdotN * HdotN);
                 float denominator = 4.0 * PI * uAlphaX * uAlphaY * sqrt(IdotN * OdotN);
-                float specularTerm = (uLobeMagnitude/denominator) * exp(expoent);
+                float specularTerm = (uLobeMagnitude/denominator) * exp(-expoent);
 
                 //set the frag color
-                fragColor = vec4(uLightAmbient, 0.0) + (diffuseTerm + specularTerm)*vec4(vec3(vec4(normal, 1.0) * vColor), 1.0);
+                fragColor = /*vec4(uLightAmbient, 1.0) +*/ (diffuseTerm + specularTerm)*vec4(vec3(vec4(normal, 1.0) * vColor), 1.0);
             }
 
             void frag_cook_torrance(void){
@@ -208,7 +210,7 @@
 
                 float specularTerm = 0.0;
                 if(NdotL > 0.0){
-                    vec3 halfVector = normalize(lightDir + vEyeVector);
+                    vec3 halfVector = normalize(lightDir + normalize(vEyeVector));
                     float NdotH = max(dot(normal, halfVector), 0.0); //N for normal, H for Half Vector
                     float NdotV = max(dot(normal, vEyeVector), 0.0); //N for normal, V for Eye Vector
                     float VdotH = max(dot(vEyeVector, halfVector), 0.0); //V for Eye Vector, H for Half Vector
@@ -231,8 +233,9 @@
 
                     specularTerm = (fresnel * geoAtt * roughness)/(NdotV * NdotL * PI);
                 }
-                vec3 finalValue = uLightAmbient + vec3(vColor) + NdotL * ((uDiffuse * vec3(0.0, 0.0, 0.0)) + (vec3(0.75, 0.75, 0.75)*specularTerm*(1.0 - uDiffuse)));
+                vec3 finalValue = /*uLightAmbient + */vec3(vColor) + NdotL * ((uDiffuse * vec3(0.0, 0.0, 0.0)) + (vec3(0.75, 0.75, 0.75)*specularTerm*(1.0 - uDiffuse)));
                 fragColor = vec4(finalValue, 1.0);
+                
             }
 
             void frag_gouraud(void){
