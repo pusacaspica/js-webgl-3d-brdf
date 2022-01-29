@@ -53,9 +53,9 @@
                 vNormal = vec4(uNormalMatrix * vec4(aVertexNormal, 1.0));
                 fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
 
-                vLightRay = uLightPosition - vec3(fragPos);
+                vLightRay = (vec3(fragPos) - uLightPosition);
 
-                vEyeVector = -(vec3(uModelViewMatrix) * aVertexPosition);
+                vEyeVector = (vec3(uModelViewMatrix) * aVertexPosition);
             }
 
             void vertex_cook_torrance(void){
@@ -64,9 +64,9 @@
 
                 fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
 
-                vLightRay = uLightPosition - vec3(fragPos);
+                vLightRay = vec3(fragPos) - uLightPosition;
 
-                vEyeVector = -(vec3(uModelViewMatrix) * aVertexPosition);
+                vEyeVector = (vec3(uModelViewMatrix) * aVertexPosition);
 
                 gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
             }
@@ -178,20 +178,19 @@
             void frag_ward(void){
                 vec3 lightDir = normalize(vLightRay);
                 vec3 normal = normalize(vec3(vNormal));
-                vec3 normalizedLightPosition = normalize(fragPos.xyz - uLightPosition);
-
-                float NdotL = dot(normal, lightDir);
 
                 //Diffuse term
                 float diffuseTerm = uDiffuseWard/PI;
 
                 //Specular term, auxiliary stuff
                 vec3 halfVector = normalize(-lightDir + normalize(vEyeVector));
-                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0) * */normal), 0.0); //X is the X axis
-                float HdotY = max(dot(halfVector, /*vec3(0.0, 1.0, 0.0) * */normal), 0.0); //Y is the Y axis
                 float HdotN = max(dot(halfVector, normal), 0.0);
                 float IdotN = max(dot(vEyeVector, normal), 0.0);
-                float OdotN = max(dot(normalizedLightPosition, normal), 0.0);
+                float OdotN = max(dot(lightDir, normal), 0.0);
+                vec3 X = normalize(cross(normal, vec3(0.0, 0.0, -1.0)));
+                vec3 Y = normalize(cross(normal, X));
+                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0)*normal*/X*normal), 0.0); //X is the X axis
+                float HdotY = max(dot(halfVector, /*HdotX*normal*/Y*normal), 0.0); //Y is the Y axis
 
                 //Specular term
                 float expoent = (((HdotX/uAlphaX) * (HdotX/uAlphaX)) + ((HdotY/uAlphaY) * (HdotY/uAlphaY)))/(HdotN * HdotN);
@@ -199,16 +198,17 @@
                 float specularTerm = (uLobeMagnitude/denominator) * exp(-expoent);
 
                 //set the frag color
-                fragColor = /*vec4(uLightAmbient, 1.0) +*/ (diffuseTerm + specularTerm)*vec4(vec3(vec4(normal, 1.0) * vColor), 1.0);
+                fragColor = /*vec4(uLightAmbient, 1.0) +*/ vec4(diffuseTerm + specularTerm, diffuseTerm + specularTerm, diffuseTerm + specularTerm, 1.0);
             }
 
             void frag_cook_torrance(void){
                 vec3 lightDir = normalize(vLightRay);
                 vec3 normal = vec3(vNormal);
 
-                float NdotL = dot(normal, lightDir); //N for Normal, L for Light Direction
+                float NdotL = dot(normal, -lightDir); //N for Normal, L for Light Direction
 
                 float specularTerm = 0.0;
+                float diffuseTerm = 0.0;
                 if(NdotL > 0.0){
                     vec3 halfVector = normalize(lightDir + normalize(vEyeVector));
                     float NdotH = max(dot(normal, halfVector), 0.0); //N for normal, H for Half Vector
@@ -216,6 +216,8 @@
                     float VdotH = max(dot(vEyeVector, halfVector), 0.0); //V for Eye Vector, H for Half Vector
                     float NdotM = max(dot(normal, normal), 0.0); //N for normal, M for microfacets normals
                     float mSquare = uRoughness * uRoughness;
+
+                    //diffuse component
 
                     //geometric attenuation following Cook-Torrance formula
                     float second = (2.0 * NdotV * NdotM)/VdotH; float third = (2.0 * NdotM * NdotL)/VdotH;
@@ -333,7 +335,7 @@
             diffuse = 0.2, reflectance = 0.8, roughness = 0.2,
             materialDiffuse = 1.0, materialSpecular = 1.0,
             lightDiffuse = 1.0, lightSpecular = 0.6, lightAmbient = 0.2,
-            diffuseWard = 0.2, lobe = 0.7, alphaX = 0.8, alphaY = 0.8;
+            diffuseWard = 0.15, lobe = 0.19, alphaX = 0.088, alphaY = 0.13;
 
         async function getShader(type, path) {
             let shaderSource;
@@ -467,7 +469,7 @@
                             ...['lightPosition X', 'lightPosition Y', 'lightPosition Z'].reduce((result, name, i) => {
                                 result[name] = {
                                     value: lightPosition[i],
-                                    min: -300, max: 300, step: 0.00001, onChange(v, state){
+                                    min: -500, max: 500, step: 0.00001, onChange(v, state){
                                         lightPosition[i] = v;
                                     }
                                 };
@@ -477,7 +479,7 @@
                     },
                     Shader:{
                         'Shader Selection': {
-                            value: "Cook-Torrance", options: ["Lambert", "Gouraud", "Phong", "Cook-Torrance", "Ward"],
+                            value: "Ward", options: ["Lambert", "Gouraud", "Phong", "Cook-Torrance", "Ward"],
                             onChange: v => {
                                 if(v == "Lambert"){
                                     shaderSelection = 0;
@@ -525,16 +527,16 @@
                         },
                         'Ward Settings': {
                             'Diffuse':{
-                                value: diffuseWard, min: 0.00000001, max: 0.99999999, step: 0.00001, onChange(v, state){diffuseWard = v;}
+                                value: diffuseWard, min: 0.00000001, max: 5.0, step: 0.000001, onChange(v, state){diffuseWard = v;}
                             },
                             'Lobe Magnitude':{
-                                value: lobe, min: 0.00000001, max: 0.99999999, step: 0.00001, onChange(v, state){lobe = v;}
+                                value: lobe, min: 0.00000001, max: 3.5, step: 0.000001, onChange(v, state){lobe = v;}
                             },
                             'Alpha X':{
-                                value: alphaX, min: 0.00000001, max: 0.99999999, step: 0.00001, onChange(v, state){alphaX = v;}
+                                value: alphaX, min: 0.00000001, max: 0.2, step: 0.000001, onChange(v, state){alphaX = v;}
                             },
                             'Alpha Y':{
-                                value: alphaY, min: 0.00000001, max: 0.99999999, step: 0.00001, onChange(v, state){alphaY = v;}
+                                value: alphaY, min: 0.00000001, max: 0.2, step: 0.000001, onChange(v, state){alphaY = v;}
                             }
                         }
                     },
