@@ -189,8 +189,8 @@
                 float OdotN = max(dot(lightDir, normal), 0.0);
                 vec3 X = normalize(cross(normal, vec3(0.0, 0.0, -1.0)));
                 vec3 Y = normalize(cross(normal, X));
-                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0)*normal*/X*normal), 0.0); //X is the X axis
-                float HdotY = max(dot(halfVector, /*HdotX*normal*/Y*normal), 0.0); //Y is the Y axis
+                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0)*normal*/X*normal), 0.0);
+                float HdotY = max(dot(halfVector, /*HdotX*normal*/Y*normal), 0.0);
 
                 //Specular term
                 float expoent = (((HdotX/uAlphaX) * (HdotX/uAlphaX)) + ((HdotY/uAlphaY) * (HdotY/uAlphaY)))/(HdotN * HdotN);
@@ -198,26 +198,24 @@
                 float specularTerm = (uLobeMagnitude/denominator) * exp(-expoent);
 
                 //set the frag color
-                fragColor = /*vec4(uLightAmbient, 1.0) +*/ vec4(diffuseTerm + specularTerm, diffuseTerm + specularTerm, diffuseTerm + specularTerm, 1.0);
+                fragColor = vColor*vec4(halfVector, 1.0) + vec4(diffuseTerm + specularTerm, diffuseTerm + specularTerm, diffuseTerm + specularTerm, 1.0);
             }
 
             void frag_cook_torrance(void){
                 vec3 lightDir = normalize(vLightRay);
                 vec3 normal = vec3(vNormal);
 
-                float NdotL = dot(normal, -lightDir); //N for Normal, L for Light Direction
+                float NdotL = dot(normal, lightDir); //N for Normal, L for Light Direction
 
                 float specularTerm = 0.0;
-                float diffuseTerm = 0.0;
+                float diffuseTerm = uDiffuse;
                 if(NdotL > 0.0){
-                    vec3 halfVector = normalize(lightDir + normalize(vEyeVector));
+                    vec3 halfVector = normalize(-lightDir + normalize(vEyeVector));
                     float NdotH = max(dot(normal, halfVector), 0.0); //N for normal, H for Half Vector
                     float NdotV = max(dot(normal, vEyeVector), 0.0); //N for normal, V for Eye Vector
                     float VdotH = max(dot(vEyeVector, halfVector), 0.0); //V for Eye Vector, H for Half Vector
                     float NdotM = max(dot(normal, normal), 0.0); //N for normal, M for microfacets normals
                     float mSquare = uRoughness * uRoughness;
-
-                    //diffuse component
 
                     //geometric attenuation following Cook-Torrance formula
                     float second = (2.0 * NdotV * NdotM)/VdotH; float third = (2.0 * NdotM * NdotL)/VdotH;
@@ -228,14 +226,20 @@
                     float r2 = (NdotH * NdotH - 1.0)/(mSquare * NdotH * NdotH);
                     float roughness = r1 * exp(r2);
 
+                    //Microfacet distribution function using Blinn-Phong
+                    /*float dem = PI*mSquare; float num = pow(NdotH, 1.0/uRoughness);
+                    float roughness = num/dem;*/
+
+
                     //Fresnel using Schlick's approximation
+                    float f0 = pow((uReflectance - 1.0), 2.0)/pow((uReflectance + 1.0), 2.0);
                     float fresnel = pow(1.0 - VdotH, 5.0);
-                    fresnel *= (1.0 - uReflectance);
-                    fresnel += uReflectance;
+                    fresnel *= (1.0 - f0);
+                    fresnel += f0;
 
                     specularTerm = (fresnel * geoAtt * roughness)/(NdotV * NdotL * PI);
                 }
-                vec3 finalValue = /*uLightAmbient + */vec3(vColor) + NdotL * ((uDiffuse * vec3(0.0, 0.0, 0.0)) + (vec3(0.75, 0.75, 0.75)*specularTerm*(1.0 - uDiffuse)));
+                vec3 finalValue = ((diffuseTerm * vec3(0.25, 0.25, 0.25)) + (vec3(0.75, 0.75, 0.75)*specularTerm*(1.0 - diffuseTerm)));
                 fragColor = vec4(finalValue, 1.0);
                 
             }
@@ -516,7 +520,7 @@
                         },
                         'Cook-Torrance Settings': {
                             'Roughness':{
-                                value: roughness, min: 0.00000001, max: 0.99999999, step: 0.00001, onChange(v, state){roughness = v;}
+                                value: roughness, min: 0.00000001, max: 3.0, step: 0.00001, onChange(v, state){roughness = v;}
                             },
                             'Diffuse':{
                                 value: diffuse, min: 0.00000001, max: 0.99, step: 0.00001, onChange(v, state){diffuse = v;}
