@@ -49,15 +49,10 @@
             out vec2 vTextureCoords;
 
             void vertex_ward(void){
-
                 vNormal = vec4(uNormalMatrix * vec4(aVertexNormal, 1.0));
-
                 fragPos = uModelViewMatrix * vec4(aVertexPosition, 1.0);
-
                 vLightRay = vec3(fragPos) - uLightPosition;
-
-                vEyeVector = vec3(uModelViewMatrix*vec4((uEyePosition - aVertexPosition), 1.0));
-
+                vEyeVector = vec3(uModelViewMatrix*vec4((uEyePosition), 1.0));
                 gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
             }
 
@@ -174,31 +169,39 @@
             out vec4 fragColor;
 
             void frag_ward(void){
-                vec3 lightDir = normalize(vLightRay);
-                vec3 normal = vec3(vNormal);
+                vec3 lightDir = normalize(-vLightRay);
+                vec3 normal = normalize(vec3(vNormal));
+                vec3 eyeVector = normalize(-vEyeVector);
 
-                float NdotL = dot(normal, -lightDir);
+                float NdotL = normalize(dot(normal, lightDir));
+
+                vec3 diffuseColor = vec3(0.75, 0.75, 0.75);
+                vec3 specularColor = vec3(0.95, 0.95, 0.95);
 
                 //Specular term, auxiliary stuff
-                vec3 halfVector = normalize(-lightDir + normalize(vEyeVector));
+                vec3 halfVector = normalize(lightDir + eyeVector);
                 float HdotN = max(dot(halfVector, normal), 0.0);
-                float IdotN = max(dot(vEyeVector, normal), 0.0);
+                float IdotN = max(dot(eyeVector, normal), 0.0);
                 float OdotN = max(dot(lightDir, normal), 0.0);
-                vec3 X = normalize(cross(normal, vec3(0.0, 0.0, -1.0)));
-                vec3 Y = normalize(cross(normal, X));
-                float HdotX = max(dot(halfVector, /*vec3(1.0, 0.0, 0.0)*normal*/X), 0.0);
-                float HdotY = max(dot(halfVector, /*HdotX*normal*/Y), 0.0);
+                vec3 X = cross(normal, vec3(1.0, -1.0, 0.0));
+                vec3 Y = cross(normal, X);
+                float HdotX = max(dot(halfVector, X), 0.0);
+                float HdotY = max(dot(halfVector, Y), 0.0);
 
                 //Specular term
-                float expoent = (((HdotX/uAlphaX) * (HdotX/uAlphaX)) + ((HdotY/uAlphaY) * (HdotY/uAlphaY)))/(HdotN * HdotN);
+                float expoent;
+                if(HdotN > 0.0) expoent = (pow(HdotX/uAlphaX, 2.0) + pow(HdotY/uAlphaY, 2.0))/pow(HdotN, 2.0);
+                else expoent = (pow(HdotX/uAlphaX, 2.0) + pow(HdotY/uAlphaY, 2.0))/1.0;
                 float denominator = 4.0 * PI * uAlphaX * uAlphaY * sqrt(IdotN * OdotN);
-                float specularTerm = NdotL * (uLobeMagnitude/denominator) * exp(-expoent);
+                float specularTerm = (uLobeMagnitude/denominator) * exp(-expoent);
 
                 //apply indirect radiance (ambient light) to diffuse term
-                vec3 diffuseTerm = abs((normalize(uLightAmbient)*NdotL*uDiffuseWard/PI));
+                vec3 diffuseTerm = (normalize(uLightAmbient)*uDiffuseWard/PI);
 
+                
                 //set the frag color
-                fragColor = /*vColor*NdotL +*/ vec4(diffuseTerm.x + specularTerm, diffuseTerm.y + specularTerm, diffuseTerm.z + specularTerm, 1.0);
+                vec3 finalColor = (diffuseTerm * diffuseColor + specularColor * specularTerm) * NdotL;
+                fragColor = vec4(finalColor, 1.0);
             }
 
             void frag_cook_torrance(void){
@@ -227,13 +230,13 @@
                     float geoAtt = abs(min(second, third)); geoAtt = abs(min(geoAtt, 1.0));
 
                     //Microfacet distribution function using Beckmann's distribution
-                    float r1 = 1.0/(PI * mSquare * pow(NdotM, 4.0));
+                    /*float r1 = 1.0/(PI * mSquare * pow(NdotM, 4.0));
                     float r2 = (NdotM * NdotM - 1.0)/(mSquare * NdotM * NdotM);
-                    float roughness = r1 * exp(r2);
+                    float roughness = r1 * exp(r2);*/
 
                     //Microfacet distribution function using Blinn-Phong
-                    /*float dem = PI*mSquare; float num = pow(NdotH, 1.0/uRoughness);
-                    float roughness = num/dem;*/
+                    float dem = PI*mSquare; float num = pow(NdotH, 1.0/uRoughness);
+                    float roughness = num/dem;
 
 
                     //Fresnel using Schlick's approximation
@@ -256,7 +259,7 @@
                     }*/
                 }
                 // finalValue = kd * diffuseTerm * diffuseColor + (1-kd) * specularTerm * specularColor
-                vec3 finalValue = ((NdotL * diffuseTerm * diffuseColor) + (specularColor*specularTerm));
+                vec3 finalValue = ((NdotL * diffuseTerm * diffuseColor) + ((NdotL)*specularColor*specularTerm));
                 fragColor = vec4(finalValue, 1.0);
             }
 
@@ -351,7 +354,7 @@
             zDistance = -20, yDistance = 0, xDistance = 0,
             transformPosition = [xDistance, yDistance, zDistance],
             zRot = zAngle * Math.PI / 180, yRot = yAngle * Math.PI / 180, xRot = xAngle * Math.PI / 180,
-            transformRotate = [xRot, yRot, zRot],
+            transformRotation = [xRot, yRot, zRot],
             diffuse = 0.2, reflectance = 0.8, roughness = 0.2,
             materialDiffuse = 1.0, materialSpecular = 1.0,
             lightDiffuse = 1.0, lightSpecular = 0.6, lightAmbient = 0.2,
@@ -536,10 +539,10 @@
                         },
                         'Cook-Torrance Settings': {
                             'Roughness':{
-                                value: roughness, min: 0.00000001, max: 3.0, step: 0.00001, onChange(v, state){roughness = v;}
+                                value: roughness, min: 0.00000001, max: 0.3, step: 0.0000001, onChange(v, state){roughness = v;}
                             },
                             'Diffuse':{
-                                value: diffuse, min: 0.00000001, max: 0.99, step: 0.00001, onChange(v, state){diffuse = v;}
+                                value: diffuse, min: 0.00000001, max: 1, step: 0.00001, onChange(v, state){diffuse = v;}
                             },
                             'Reflectance':{
                                 value: reflectance, min: 0.00000001, max: 1, step: 0.00001, onChange(v, state){reflectance = v;}
@@ -547,24 +550,24 @@
                         },
                         'Ward Settings': {
                             'Diffuse':{
-                                value: diffuseWard, min: 0.00000001, max: 5.0, step: 0.000001, onChange(v, state){diffuseWard = v;}
+                                value: diffuseWard, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){diffuseWard = v;}
                             },
                             'Lobe Magnitude':{
-                                value: lobe, min: 0.00000001, max: 3.5, step: 0.000001, onChange(v, state){lobe = v;}
+                                value: lobe, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){lobe = v;}
                             },
                             'Alpha X':{
-                                value: alphaX, min: 0.00000001, max: 0.2, step: 0.000001, onChange(v, state){alphaX = v;}
+                                value: alphaX, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){alphaX = v;}
                             },
                             'Alpha Y':{
-                                value: alphaY, min: 0.00000001, max: 0.2, step: 0.000001, onChange(v, state){alphaY = v;}
+                                value: alphaY, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){alphaY = v;}
                             }
                         }
                     },
-                    SceneControl:{
+                    'Model View Controls':{
                         ...['Translate X', 'Translate Y', 'Translate Z'].reduce((result, name, i) => {
                             result[name] = {
                                 value: transformPosition[i],
-                                min: -50, max: 50, step: 0.00001, onChange(v, state){
+                                min: -50, max: 50, step: 0.000001, onChange(v, state){
                                     transformPosition[i] = v;
                                 }
                             };
@@ -572,10 +575,10 @@
                         }, {}),
                         ...['Rotate X', 'Rotate Y', 'Rotate Z'].reduce((result, name, i) => {
                             result[name] = {
-                                value: transformRotate[i],
+                                value: transformRotation[i],
                                 min: -180, max: 180, step: 0.00001,
                                 onChange(v, state){
-                                    transformRotate = [
+                                    transformRotation = [
                                         state['Rotate X']*Math.PI/180,
                                         state['Rotate Y']*Math.PI/180,
                                         state['Rotate Z']*Math.PI/180
@@ -605,7 +608,7 @@
         }
 
         function load() {
-            fetch('sphere.json').then(resp => resp.json()).then(robotJson => {
+            fetch('Robot_2.json').then(resp => resp.json()).then(robotJson => {
                 // Configure VAO
                 const vao = gl.createVertexArray();
                 gl.bindVertexArray(vao);
@@ -692,9 +695,9 @@
             mat4.perspective(projectionMatrix, 45, gl.canvas.width / gl.canvas.height, 1, 5000);
             mat4.identity(modelViewMatrix);
             mat4.translate(modelViewMatrix, modelViewMatrix, transformPosition);
-            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[0], [1, 0, 0]);
-            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[1], [0, 1, 0]);
-            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotate[2], [0, 0, 1]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotation[0], [1, 0, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotation[1], [0, 1, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, transformRotation[2], [0, 0, 1]);
 
             mat4.copy(normalMatrix, modelViewMatrix);
             mat4.invert(normalMatrix, normalMatrix);
