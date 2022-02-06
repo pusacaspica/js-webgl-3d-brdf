@@ -169,21 +169,21 @@
             out vec4 fragColor;
 
             void frag_ward(void){
-                vec3 lightDir = normalize(-vLightRay);
+                vec3 lightDir = -normalize(vLightRay);
                 vec3 normal = normalize(vec3(vNormal));
-                vec3 eyeVector = normalize(-vEyeVector);
+                vec3 eyeVector = -normalize(vEyeVector);
 
-                float NdotL = normalize(dot(normal, lightDir));
+                float NdotL = dot(normal, lightDir);
 
-                vec3 diffuseColor = vec3(0.75, 0.75, 0.75);
-                vec3 specularColor = vec3(0.95, 0.95, 0.95);
+                vec3 diffuseColor = vec3(0.5, 0.5, 0.5);
+                vec3 specularColor = vec3(0.5, 0.5, 0.5);
 
                 //Specular term, auxiliary stuff
-                vec3 halfVector = normalize(lightDir + eyeVector);
-                float HdotN = max(dot(halfVector, normal), 0.0);
-                float IdotN = max(dot(eyeVector, normal), 0.0);
-                float OdotN = max(dot(lightDir, normal), 0.0);
-                vec3 X = cross(normal, vec3(1.0, -1.0, 0.0));
+                vec3 halfVector = normalize(lightDir) + normalize(eyeVector);
+                float HdotN = max(dot(normalize(halfVector), normal), 0.0);
+                float IdotN = max(dot(normalize(eyeVector), normal), 0.0);
+                float OdotN = max(dot(normalize(lightDir), normal), 0.0);
+                vec3 X = cross(normal, -halfVector * (1.0, 0.0, 1.0));
                 vec3 Y = cross(normal, X);
                 float HdotX = max(dot(halfVector, X), 0.0);
                 float HdotY = max(dot(halfVector, Y), 0.0);
@@ -193,14 +193,15 @@
                 if(HdotN > 0.0) expoent = (pow(HdotX/uAlphaX, 2.0) + pow(HdotY/uAlphaY, 2.0))/pow(HdotN, 2.0);
                 else expoent = (pow(HdotX/uAlphaX, 2.0) + pow(HdotY/uAlphaY, 2.0))/1.0;
                 float denominator = 4.0 * PI * uAlphaX * uAlphaY * sqrt(IdotN * OdotN);
-                float specularTerm = (uLobeMagnitude/denominator) * exp(-expoent);
+                float specularTerm;
+                if(denominator > 0.0) specularTerm = (uLobeMagnitude* exp(-expoent))/denominator;
+                else specularTerm = (uLobeMagnitude* exp(-expoent))/0.000001;
 
-                //apply indirect radiance (ambient light) to diffuse term
-                vec3 diffuseTerm = (normalize(uLightAmbient)*uDiffuseWard/PI);
+                //Diffuse term
+                float diffuseTerm = uDiffuseWard;
 
-                
                 //set the frag color
-                vec3 finalColor = (diffuseTerm * diffuseColor + specularColor * specularTerm) * NdotL;
+                vec3 finalColor = vec3((NdotL * diffuseTerm * diffuseColor) + (NdotL * specularColor * specularTerm));
                 fragColor = vec4(finalColor, 1.0);
             }
 
@@ -245,18 +246,7 @@
                     fresnel *= (1.0 - f0);
                     fresnel += f0;
 
-                    geoAtt = 1.0;
-                    //fresnel = 1.0;
-                    //roughness = 1.0;
                     specularTerm = (roughness * geoAtt * fresnel)/(NdotV * NdotL * PI);
-                    /*if(NdotV >= 0.5){
-                        diffuseColor = vec3(1.0, 0.0, 0.0);
-                        specularColor = vec3(1.0, 0.0, 0.0);
-                    }*/
-                    /*if (specularTerm >= 1.0) {
-                        diffuseColor = vec3(1.0, 1.0, 0.0);
-                        specularColor = vec3(1.0, 1.0, 0.0);
-                    }*/
                 }
                 // finalValue = kd * diffuseTerm * diffuseColor + (1-kd) * specularTerm * specularColor
                 vec3 finalValue = ((NdotL * diffuseTerm * diffuseColor) + ((NdotL)*specularColor*specularTerm));
@@ -556,18 +546,18 @@
                                 value: lobe, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){lobe = v;}
                             },
                             'Alpha X':{
-                                value: alphaX, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){alphaX = v;}
+                                value: alphaX, min: 0.00000000, max: 0.5, step: 0.000001, onChange(v, state){alphaX = v;}
                             },
                             'Alpha Y':{
-                                value: alphaY, min: 0.00000001, max: 1, step: 0.000001, onChange(v, state){alphaY = v;}
+                                value: alphaY, min: 0.00000000, max: 0.5, step: 0.000001, onChange(v, state){alphaY = v;}
                             }
                         }
                     },
-                    'Model View Controls':{
+                    'Model Transforms':{
                         ...['Translate X', 'Translate Y', 'Translate Z'].reduce((result, name, i) => {
                             result[name] = {
                                 value: transformPosition[i],
-                                min: -50, max: 50, step: 0.000001, onChange(v, state){
+                                min: -50, max: 50, step: 0.00000001, onChange(v, state){
                                     transformPosition[i] = v;
                                 }
                             };
@@ -576,7 +566,7 @@
                         ...['Rotate X', 'Rotate Y', 'Rotate Z'].reduce((result, name, i) => {
                             result[name] = {
                                 value: transformRotation[i],
-                                min: -180, max: 180, step: 0.00001,
+                                min: -180, max: 180, step: 0.0000001,
                                 onChange(v, state){
                                     transformRotation = [
                                         state['Rotate X']*Math.PI/180,
