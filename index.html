@@ -175,7 +175,7 @@
 
                 float NdotL = dot(normal, lightDir);
 
-                vec3 diffuseColor = vec3(0.5, 0.5, 0.5);
+                vec3 diffuseColor = vec3(1.0, 1.0, 1.0);
                 vec3 specularColor = vec3(0.5, 0.5, 0.5);
 
                 //Specular term, auxiliary float values
@@ -198,7 +198,7 @@
                 else specularTerm = (uLobeMagnitude* exp(-expoent))/0.000001;
 
                 //Diffuse term
-                float diffuseTerm = uDiffuseWard;
+                float diffuseTerm = uDiffuseWard/PI;
 
                 //set the frag color
                 vec3 finalColor = vec3((NdotL * diffuseTerm * diffuseColor) + (NdotL * specularColor * specularTerm));
