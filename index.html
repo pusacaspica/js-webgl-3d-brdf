@@ -154,8 +154,8 @@
             uniform highp float uReflectance; //ye olde uReflectance, used for Fresnel in Cook-Torrance]
             uniform highp float uDiffuseWard; //used in Ward shader
             uniform highp float uLobeMagnitude; //used in Ward shader
-            uniform highp float uAlphaX;
-            uniform highp float uAlphaY;
+            uniform highp float uAlphaX; //used in Ward shader
+            uniform highp float uAlphaY; //used in Ward shader
 
             uniform sampler2D uSampler;
         
@@ -178,7 +178,7 @@
                 vec3 diffuseColor = vec3(0.5, 0.5, 0.5);
                 vec3 specularColor = vec3(0.5, 0.5, 0.5);
 
-                //Specular term, auxiliary stuff
+                //Specular term, auxiliary float values
                 vec3 halfVector = normalize(lightDir) + normalize(eyeVector);
                 float HdotN = max(dot(normalize(halfVector), normal), 0.0);
                 float IdotN = max(dot(normalize(eyeVector), normal), 0.0);
@@ -230,7 +230,8 @@
                     float second = (2.0 * NdotV * NdotM)/VdotH; float third = (2.0 * NdotM * NdotL)/VdotH;
                     float geoAtt = abs(min(second, third)); geoAtt = abs(min(geoAtt, 1.0));
 
-                    //Microfacet distribution function using Beckmann's distribution
+                    // Microfacet distribution function using Beckmann's distribution
+                    // Inverts specular for some reason
                     /*float r1 = 1.0/(PI * mSquare * pow(NdotM, 4.0));
                     float r2 = (NdotM * NdotM - 1.0)/(mSquare * NdotM * NdotM);
                     float roughness = r1 * exp(r2);*/
@@ -245,10 +246,11 @@
                     float fresnel = pow(1.0 - VdotH, 5.0);
                     fresnel *= (1.0 - f0);
                     fresnel += f0;
-
+                    
+                    //Specular term
                     specularTerm = (roughness * geoAtt * fresnel)/(NdotV * NdotL * PI);
                 }
-                // finalValue = kd * diffuseTerm * diffuseColor + (1-kd) * specularTerm * specularColor
+
                 vec3 finalValue = ((NdotL * diffuseTerm * diffuseColor) + ((NdotL)*specularColor*specularTerm));
                 fragColor = vec4(finalValue, 1.0);
             }
@@ -331,7 +333,6 @@
             gl,
             program,
             robot = [],
-            before = 0,
             shininess = 16,
             textureActive = 0,
             shaderSelection = 3,
@@ -340,16 +341,21 @@
             lightPosition = [-0, 50, 0],
             modelViewMatrix = mat4.create(),
             projectionMatrix = mat4.create(),
+            
+            // model coordiantes
             xAngle = 25.0, yAngle = 0.0, zAngle = -0.0,
             zDistance = -20, yDistance = 0, xDistance = 0,
             transformPosition = [xDistance, yDistance, zDistance],
             zRot = zAngle * Math.PI / 180, yRot = yAngle * Math.PI / 180, xRot = xAngle * Math.PI / 180,
             transformRotation = [xRot, yRot, zRot],
+
+            // shader settings
             diffuse = 0.2, reflectance = 0.8, roughness = 0.2,
             materialDiffuse = 1.0, materialSpecular = 1.0,
             lightDiffuse = 1.0, lightSpecular = 0.6, lightAmbient = 0.2,
             diffuseWard = 0.15, lobe = 0.19, alphaX = 0.088, alphaY = 0.13;
 
+        // Unused function for getting shaders, not compatible with the utilitaries used
         async function getShader(type, path) {
             let shaderSource;
 
@@ -381,6 +387,7 @@
             return shader;
         }
 
+        // Unused function for feching 3D models in .json, not compatible with the utilitaries used
         async function getModel(path) {
             let model;
 
@@ -395,7 +402,7 @@
             return model;
         }
 
-        // Global variables to use throughout application
+        // Program initialization, shader compilation, variable setting
         async function initProgram() {
             const canvas = document.getElementById('webgl-canvas');
 
@@ -405,19 +412,6 @@
             gl.depthFunc(gl.LEQUAL);
 
             program = new Program(gl, 'vertex-shader', 'fragment-shader');
-
-            //let vertexShader = /*gl.createShader(gl.VERTEX_SHADER), rawVertexShaderSrc = document.getElementById('vertex-shader'); let vertexShaderSrc = rawVertexShaderSrc.text.trim(); gl.shaderSource(vertexShader, vertexShaderSrc); gl.compileShader(vertexShader);*/ await getShader('vertex', 'robot_vertex.glsl');
-            //let fragShader = /*gl.createShader(gl.FRAGMENT_SHADER), rawFragShaderSrc = document.getElementById('fragment-shader'); let fragShaderSrc = rawFragShaderSrc.text.trim(); gl.shaderSource(fragShader, fragShaderSrc); gl.compileShader(fragShader);*/ await getShader('fragment', 'robot_frag.glsl');
-
-            //gl.attachShader(program, vertexShader);
-            //gl.attachShader(program, fragShader);
-            ///gl.linkProgram(program);
-
-            //gl.useProgram(program);
-
-            /*if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                return console.error('Could not initialize shaders.');
-            }*/
 
             // Attributes to be loaded into program
             const attributes = [
@@ -450,12 +444,15 @@
                 'uLobeMagnitude',
                 'uAlphaX', 'uAlphaY'
             ];
+
+            //link variables to shader attributes
             program.load(attributes, uniforms);
             gl.uniform1i(program.uTextureActive, textureActive);
             gl.uniform3f(program.uEyePosition, transformPosition);
         }
 
-        function initLights() {
+        // Attribute initialization
+        function initAttr() {
             gl.uniform3fv(program.uLightPosition, lightPosition);
             gl.uniform3f(program.uLightAmbient, lightAmbient, lightAmbient, lightAmbient);
             gl.uniform3f(program.uLightSpecular, lightSpecular, lightSpecular, lightSpecular);
@@ -472,13 +469,13 @@
             gl.uniform1f(program.uAlphaY, alphaY);
         }
 
+        // GUI initialization
         function initControls() {
             var axis = ["x", "y", "z"];
 
             utils.configureControls(
                 {
-                    LightsControl:{
-                        Position:{
+                    'Light Position':{
                             ...['lightPosition X', 'lightPosition Y', 'lightPosition Z'].reduce((result, name, i) => {
                                 result[name] = {
                                     value: lightPosition[i],
@@ -488,7 +485,6 @@
                                 };
                                 return result;
                             }, {}),
-                        },
                     },
                     Shader:{
                         'Shader Selection': {
@@ -519,12 +515,6 @@
                             },
                             'Light Ambient':{
                                 value: lightAmbient, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightAmbient = v;}
-                            },
-                            'Light Diffuse':{
-                                value: lightDiffuse, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightDiffuse = v;}
-                            },
-                            'Light Specular':{
-                                value: lightSpecular, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightSpecular = v;}
                             },
                         },
                         'Cook-Torrance Settings': {
@@ -582,21 +572,13 @@
             );
         }
 
-        function animate() {
-            const now = new Date().getTime();
-            if (before) {
-                const elapsed = now - before;
-                yRot += (Math.PI * elapsed) / 2500;
-            }
-            before = now;
-        }
-
+        // Render function
         function render() {
             requestAnimationFrame(render);
             draw();
-            animate();
         }
 
+        // Load 3D model in .json, load model information in buffers
         function load() {
             fetch('sphere.json').then(resp => resp.json()).then(robotJson => {
                 // Configure VAO
@@ -637,7 +619,6 @@
 
                 //push the matrices into robot array
                 robot.push(robotJson);
-                console.log(robot);
 
                 // Clean
                 gl.bindVertexArray(null);
@@ -647,6 +628,7 @@
             )
         }
 
+        // Draw model in screen, update light and material properties
         function draw() {
             gl.clearColor(...clearColor, 1);
             gl.enable(gl.DEPTH_TEST);
@@ -657,13 +639,11 @@
             // Update of which shader is currently activated
             gl.uniform1i(program.uShaderSelection, shaderSelection);
 
-            // Update of material parameters, mainly affecting diffuse and specular
+            // Update of material parameters, affection only Phong, Lambert and Gouraud
             gl.uniform3f(program.uMaterialDiffuse, materialDiffuse, materialDiffuse, materialDiffuse);
             gl.uniform3f(program.uMaterialSpecular, materialSpecular, materialSpecular, materialSpecular);
 
             // Update of light parameters, mainly affecting Phong, Lambert and Gouraud
-            gl.uniform3f(program.uLightDiffuse, lightDiffuse, lightDiffuse, lightDiffuse);
-            gl.uniform3f(program.uLightSpecular, lightSpecular, lightSpecular, lightSpecular);
             gl.uniform3f(program.uLightAmbient, lightAmbient, lightAmbient, lightAmbient);
             gl.uniform1f(program.uShininess, shininess);
 
@@ -697,11 +677,11 @@
             gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
             gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
 
-            // Bind
+            // Bind VAO and IBO
             gl.bindVertexArray(robot[0].vao);
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, robot[0].ibo);
 
-            // Draw
+            // Draw model
             gl.drawElements(gl.TRIANGLES, robot[0].indices.length, gl.UNSIGNED_SHORT, 0);
 
             // Clean
@@ -710,9 +690,10 @@
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
         }
 
+        // Init program
         function init() {
             initProgram();
-            initLights();
+            initAttr();
             initControls();
             load();
             render();
