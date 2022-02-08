@@ -505,7 +505,7 @@
                         },
                         'General Settings (for Lambert, Phong and Gouraud)':{
                             'Shininess':{
-                                value: shininess, min: 0, max: 5, step: 0.00001, onChange(v, state){shininess = v;}
+                                value: shininess, min: 0, max: 100, step: 0.00001, onChange(v, state){shininess = v;}
                             },
                             'Material Diffuse': {
                                 value: materialDiffuse, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){materialDiffuse = v;}
@@ -572,7 +572,7 @@
             );
         }
 
-        // Render function
+        // Render function, call functions that are called every frame
         function render() {
             requestAnimationFrame(render);
             draw();
