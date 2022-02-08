@@ -195,7 +195,7 @@
                 float denominator = 4.0 * PI * uAlphaX * uAlphaY * sqrt(IdotN * OdotN);
                 float specularTerm;
                 if(denominator > 0.0) specularTerm = (uLobeMagnitude* exp(-expoent))/denominator;
-                else specularTerm = (uLobeMagnitude* exp(-expoent))/0.000001;
+                else specularTerm = (uLobeMagnitude* exp(-expoent))/0.01;
 
                 //Diffuse term
                 float diffuseTerm = uDiffuseWard/PI;
@@ -514,7 +514,7 @@
                                 value: materialSpecular, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){materialSpecular = v;}
                             },
                             'Light Ambient':{
-                                value: lightAmbient, min: 0.00001, max: 5, step: 0.00001, onChange(v, state){lightAmbient = v;}
+                                value: lightAmbient, min: 0.00000, max: 5, step: 0.00001, onChange(v, state){lightAmbient = v;}
                             },
                         },
                         'Cook-Torrance Settings': {
