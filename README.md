@@ -5,7 +5,7 @@
 
  O Cook-Torrance utiliza a função de distribuição de microfacetas baseada em Blinn-Phong. 
  
-![logo](https://www.raspberrypi.org/app/uploads/2018/03/RPi-Logo-Reg-SCREEN-199x250.png "Raspberry pi")
+![logo](/capy.jfif "hooray you found the easter egg!")
 
  Existe implementação no código para a implementação da função de Beckmann entre as linhas 233 e 237, mas ela foi preterida uma vez que era mais fácil fazer depuração da corretude do modelo de Blinn-Phong. Cook-Torrance em sua implementação atual também implementa a própria fórmula de Cook-Torrance para atenuação geométrica.
 
