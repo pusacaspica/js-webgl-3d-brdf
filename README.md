@@ -3,7 +3,11 @@
 
  Este trabalho executa uma versão dos BRDFs Cook-Torrance e Ward na forma de shaders sobre modelos fornecidos no formato .json, dentro de uma cena com controles simples para manipular a posição do ponto de luz e a rotação e translação do modelo na cena. A seleção do modelo, por ora, deve ser feita alterando a linha 583 do arquivo index.html. Mais instruções sobre o formato do arquivo .json abaixo. Também existem implementações dos shaders Phong, Lambert e Gouraud para fins de comparação.
 
- O Cook-Torrance utiliza a função de distribuição de microfacetas baseada em Blinn-Phong. Existe implementação no código para a implementação da função de Beckmann entre as linhas 233 e 237, mas ela foi preterida uma vez que era mais fácil fazer depuração da corretude do modelo de Blinn-Phong. Cook-Torrance em sua implementação atual também implementa a própria fórmula de Cook-Torrance para atenuação geométrica.
+ O Cook-Torrance utiliza a função de distribuição de microfacetas baseada em Blinn-Phong. 
+ 
+![logo](https://www.raspberrypi.org/app/uploads/2018/03/RPi-Logo-Reg-SCREEN-199x250.png "Raspberry pi")
+
+ Existe implementação no código para a implementação da função de Beckmann entre as linhas 233 e 237, mas ela foi preterida uma vez que era mais fácil fazer depuração da corretude do modelo de Blinn-Phong. Cook-Torrance em sua implementação atual também implementa a própria fórmula de Cook-Torrance para atenuação geométrica.
 
  Ward, por sua vez, foi implementado em maior parte conforme o artigo original (WARD, 1992). A única diferença foi o uso da aproximação para calcular valores de cossenos e tangentes, que foram aproximadas para melhor desempenho computacional conforme (WALTER, 2005).
 
