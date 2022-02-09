@@ -23,6 +23,7 @@
             uniform vec3 uLightPosition;
             uniform vec3 uLightAmbient;
             uniform vec3 uMaterialDiffuse;
+            uniform vec3 uMaterialSpecular;
             uniform vec3 uEyePosition;
 
             uniform mat4 uModelViewMatrix;
@@ -65,7 +66,7 @@
             }
 
             void vertex_gouraud(void){
-                vec3 normal = vec3(uNormalMatrix * vec4(aVertexNormal, 1.0));
+                vec3 normal = normalize(vec3(uNormalMatrix * vec4(aVertexNormal, 1.0)));
                 vec3 normalizedLightPosition = normalize(-uLightPosition);
 
                 float lambertTerm = dot(normal, -normalizedLightPosition);
@@ -75,11 +76,11 @@
                 vec4 Ispecular = vec4(0.0, 0.0, 0.0, 1.0);
 
                 if(lambertTerm > 0.0){
-                    vec3 reflecc = reflect(normalizedLightPosition, normal);
+                    vec3 reflecc = normalize(reflect(normalizedLightPosition, normal));
                     vec3 view = normalize(-uEyePosition);
                     float specularTerm = pow( max( dot(reflecc, view), 0.0), uShininess);
-                    Idiffuse = vec4(uMaterialDiffuse, 1.0) * lambertTerm;
-                    Ispecular = uLightSpecular * specularTerm;
+                    Idiffuse += vec4(vec3(vec4(uMaterialDiffuse, 1.0) * lambertTerm), 1.0);
+                    Ispecular += vec4(vec3(uMaterialSpecular * specularTerm), 1.0);
                 }
                 vColor = vec4(vec3(Iambient+Idiffuse+Ispecular), 1.0);
 
@@ -206,29 +207,31 @@
             }
 
             void frag_cook_torrance(void){
-                vec3 lightDir = normalize(vLightRay);
+                vec3 lightDir = -normalize(vLightRay);
                 vec3 normal = normalize(vec3(vNormal));
+                vec3 eyeVector = -normalize(vEyeVector);
 
-                float NdotL = dot(normal, -lightDir); //N for Normal, L for Light Direction
-                float NdotV = max(dot(normal, normalize(-vEyeVector)), 0.0); //N for normal, V for Eye Vector
+                float NdotL = dot(normal, normalize(lightDir)); //N for Normal, L for Light Direction
+                float NdotV = dot(normal, normalize(eyeVector)); //N for normal, V for Eye Vector
+                if(NdotV == 0.0) NdotV = 0.001;
 
                 float specularTerm = 0.0;
                 float diffuseTerm = uDiffuse;
 
-                vec3 diffuseColor = vec3(0.5, 0.50, 0.5);
+                vec3 diffuseColor = vec3(1.0, 1.0, 1.0);
                 vec3 specularColor = vec3(0.5, 0.5, 0.5);
 
-                if(NdotL >= 0.0){
-                    vec3 halfVector = normalize(normalize(-lightDir) + normalize(-vEyeVector));
-                    float NdotH = max(dot(normal, halfVector), 0.0); //N for normal, H for Half Vector
+                if(NdotL > 0.0){
+                    vec3 halfVector = normalize(lightDir) + normalize(eyeVector);
+                    float NdotH = max(dot(normal, normalize(halfVector)), 0.0); //N for normal, H for Half Vector
                     
-                    float VdotH = max(dot(-normalize(vEyeVector), halfVector), 0.0); //V for Eye Vector, H for Half Vector
-                    float NdotM = max(dot(normal, normal), 0.0); //N for normal, M for microfacets normals
+                    float VdotH = max(dot(normalize(eyeVector), normalize(halfVector)), 0.0); //V for Eye Vector, H for Half Vector
+                    float NdotM = max(dot(normal, normalize(normal)), 0.0); //N for normal, M for microfacets normals
                     float mSquare = uRoughness * uRoughness;
 
                     //geometric attenuation following Cook-Torrance formula
                     float second = (2.0 * NdotV * NdotM)/VdotH; float third = (2.0 * NdotM * NdotL)/VdotH;
-                    float geoAtt = abs(min(second, third)); geoAtt = abs(min(geoAtt, 1.0));
+                    float geoAtt = min(second, third); geoAtt = min(geoAtt, 1.0);
 
                     // Microfacet distribution function using Beckmann's distribution
                     // Inverts specular for some reason
@@ -249,6 +252,7 @@
                     
                     //Specular term
                     specularTerm = (roughness * geoAtt * fresnel)/(NdotV * NdotL * PI);
+                    if(specularTerm <= 0.0) specularTerm = 0.1;
                 }
 
                 vec3 finalValue = ((NdotL * diffuseTerm * diffuseColor) + ((NdotL)*specularColor*specularTerm));
@@ -267,9 +271,9 @@
 
             void frag_phong(void){
                 vec4 color;
-                vec3 normal = vNormal.xyz;
+                vec3 normal = normalize(vNormal.xyz);
                 vec3 pos = fragPos.xyz;
-                vec3 normalizedLightPosition = normalize(pos-uLightPosition);
+                vec3 normalizedLightPosition = normalize(-uLightPosition);
 
                 float lambertTerm = dot(normal, -normalizedLightPosition);
 
@@ -282,10 +286,10 @@
                     vec3 view = normalize(-uEyePosition);
                     float specularTerm = pow( max( dot(reflecc, view), 0.0), uShininess);
 
-                    Idiffuse = vec4(uMaterialDiffuse, 1.0) * lambertTerm;
-                    Ispecular = vec4(uMaterialSpecular, 1.0) * uLightSpecular * specularTerm;
+                    Idiffuse = vec4(vec3(vec4(uMaterialDiffuse, 1.0) * lambertTerm), 1.0);
+                    Ispecular = vec4(uMaterialSpecular * specularTerm, 1.0);
                 }
-                color = vColor + vec4(vec3(Iambient + Idiffuse + Ispecular), 1.0);
+                color = vec4(vec3(Iambient + Idiffuse + Ispecular), 1.0);
                 if(uTextureActive == 1){
                     color = color * texture(uSampler, vTextureCoords);
                 }
@@ -338,7 +342,7 @@
             shaderSelection = 3,
             normalMatrix = mat4.create(),
             clearColor = [0.2, 0.2, 0.35],
-            lightPosition = [-0, 50, 0],
+            lightPosition = [0, 50, 0],
             modelViewMatrix = mat4.create(),
             projectionMatrix = mat4.create(),
             
@@ -350,10 +354,10 @@
             transformRotation = [xRot, yRot, zRot],
 
             // shader settings
-            diffuse = 0.2, reflectance = 0.8, roughness = 0.2,
+            diffuse = 1.0, reflectance = 0.5, roughness = 0.25,
             materialDiffuse = 1.0, materialSpecular = 1.0,
-            lightDiffuse = 1.0, lightSpecular = 0.6, lightAmbient = 0.2,
-            diffuseWard = 0.15, lobe = 0.19, alphaX = 0.088, alphaY = 0.13;
+            lightDiffuse = 1.0, lightSpecular = 1.0, lightAmbient = 0.0,
+            diffuseWard = 1.0, lobe = 0.19, alphaX = 0.04, alphaY = 0.5;
 
         // Unused function for getting shaders, not compatible with the utilitaries used
         async function getShader(type, path) {
@@ -435,7 +439,7 @@
                 'uMaterialDiffuse',
                 'uEyePosition',
                 'uShininess',
-                'uSampler',
+                //'uSampler',
                 'uShaderSelection',
                 'uRoughness',
                 'uDiffuse',
@@ -448,11 +452,11 @@
             //link variables to shader attributes
             program.load(attributes, uniforms);
             gl.uniform1i(program.uTextureActive, textureActive);
-            gl.uniform3f(program.uEyePosition, transformPosition);
         }
 
         // Attribute initialization
         function initAttr() {
+            gl.uniform3fv(program.uEyePosition, transformPosition);
             gl.uniform3fv(program.uLightPosition, lightPosition);
             gl.uniform3f(program.uLightAmbient, lightAmbient, lightAmbient, lightAmbient);
             gl.uniform3f(program.uLightSpecular, lightSpecular, lightSpecular, lightSpecular);
@@ -580,7 +584,7 @@
 
         // Load 3D model in .json, load model information in buffers
         function load() {
-            fetch('sphere.json').then(resp => resp.json()).then(robotJson => {
+            fetch('Robot_2.json').then(resp => resp.json()).then(robotJson => {
                 // Configure VAO
                 const vao = gl.createVertexArray();
                 gl.bindVertexArray(vao);
