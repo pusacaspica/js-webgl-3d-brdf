@@ -3,9 +3,9 @@
 
  Este trabalho executa uma versão dos BRDFs Cook-Torrance e Ward na forma de shaders sobre modelos fornecidos no formato .json, dentro de uma cena com controles simples para manipular a posição do ponto de luz e a rotação e translação do modelo na cena. A seleção do modelo, por ora, deve ser feita alterando a linha 583 do arquivo index.html. Mais instruções sobre o formato do arquivo .json abaixo. Também existem implementações dos shaders Phong, Lambert e Gouraud para fins de comparação.
 
- O Cook-Torrance utiliza a função de distribuição de microfacetas baseada em Blinn-Phong. 
+ O Cook-Torrance funciona somando uma componente difusa a uma componente especular para resultar em cor em um determinado pixel, dados os parâmetros apropriados, a iluminação na cena e as cores tanto do material difuso quanto do especular. A definição do valor de difusão é um valor escalar que varia de 0.0 até 1.0. Já o especular utiliza algumas funções para simular o comportamento do material sob uma luz específica em condições específicas. A primeira função a ser utilizada é a função de distribuição de microfacetas baseada em Blinn-Phong. 
  
-![logo](/capy.jfif "hooray you found the easter egg!")
+![logo](/common/readme/blinn-phong.png "Função de distribuição de microfacetas")
 
  Existe implementação no código para a implementação da função de Beckmann entre as linhas 233 e 237, mas ela foi preterida uma vez que era mais fácil fazer depuração da corretude do modelo de Blinn-Phong. Cook-Torrance em sua implementação atual também implementa a própria fórmula de Cook-Torrance para atenuação geométrica.
 
