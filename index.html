@@ -199,7 +199,7 @@
                 else specularTerm = (uLobeMagnitude* exp(-expoent))/0.01;
 
                 //Diffuse term
-                float diffuseTerm = uDiffuseWard/PI;
+                float diffuseTerm = uDiffuseWard;
 
                 //set the frag color
                 vec3 finalColor = vec3((NdotL * diffuseTerm * diffuseColor) + (NdotL * specularColor * specularTerm));
@@ -337,7 +337,7 @@
             gl,
             program,
             robot = [],
-            shininess = 16,
+            shininess = 20,
             textureActive = 0,
             shaderSelection = 3,
             normalMatrix = mat4.create(),
@@ -354,10 +354,10 @@
             transformRotation = [xRot, yRot, zRot],
 
             // shader settings
-            diffuse = 1.0, reflectance = 0.5, roughness = 0.25,
-            materialDiffuse = 1.0, materialSpecular = 1.0,
+            diffuse = 1.0, reflectance = 0.7, roughness = 0.03,
+            materialDiffuse = 1.037, materialSpecular = 5.0,
             lightDiffuse = 1.0, lightSpecular = 1.0, lightAmbient = 0.0,
-            diffuseWard = 1.0, lobe = 0.19, alphaX = 0.04, alphaY = 0.5;
+            diffuseWard = 1.0, lobe = 0.75, alphaX = 0.15, alphaY = 0.09;
 
         // Unused function for getting shaders, not compatible with the utilitaries used
         async function getShader(type, path) {
@@ -439,7 +439,7 @@
                 'uMaterialDiffuse',
                 'uEyePosition',
                 'uShininess',
-                //'uSampler',
+                'uSampler',
                 'uShaderSelection',
                 'uRoughness',
                 'uDiffuse',
